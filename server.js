@@ -532,7 +532,10 @@ function performMount(remote, letter, method, volumeName = 'Nubes Unidas') {
     const processArgs = [
       '--config', RCLONE_CONF,
       'serve', 'webdav', `${remote}:`,
-      '--addr', `127.0.0.1:${port}`
+      '--addr', `127.0.0.1:${port}`,
+      '--vfs-cache-mode', 'full',
+      '--onedrive-chunk-size', '64M',
+      '--buffer-size', '32M'
     ];
     
     const child = spawn(RCLONE_EXE, processArgs);
@@ -589,7 +592,9 @@ function performMount(remote, letter, method, volumeName = 'Nubes Unidas') {
       '--config', RCLONE_CONF,
       'mount', `${remote}:`, `${letter}:`,
       '--vfs-cache-mode', 'full',
-      '--volname', volumeName
+      '--volname', volumeName,
+      '--onedrive-chunk-size', '64M',
+      '--buffer-size', '32M'
     ];
 
     const child = spawn(RCLONE_EXE, processArgs);
