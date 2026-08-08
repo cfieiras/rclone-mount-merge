@@ -581,7 +581,7 @@ function performMount(remote, letter, method, volumeName = 'Nubes Unidas') {
       'serve', 'webdav', `${remote}:`,
       '--addr', `127.0.0.1:${port}`,
       '--vfs-cache-mode', 'full',
-      '--onedrive-chunk-size', '64M',
+      '--onedrive-chunk-size', '100M',
       '--buffer-size', '32M',
       '--cache-dir', path.join(BIN_DIR, 'cache')
     ];
@@ -641,7 +641,7 @@ function performMount(remote, letter, method, volumeName = 'Nubes Unidas') {
       'mount', `${remote}:`, `${letter}:`,
       '--vfs-cache-mode', 'full',
       '--volname', volumeName,
-      '--onedrive-chunk-size', '64M',
+      '--onedrive-chunk-size', '100M',
       '--buffer-size', '32M',
       '--cache-dir', path.join(BIN_DIR, 'cache')
     ];
