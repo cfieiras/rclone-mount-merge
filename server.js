@@ -166,14 +166,61 @@ function checkWinFsp() {
 }
 
 // API Endpoints
+// Get directory size recursively
+function getDirectorySize(dirPath) {
+  let size = 0;
+  if (!fs.existsSync(dirPath)) return 0;
+  try {
+    const files = fs.readdirSync(dirPath);
+    for (let i = 0; i < files.length; i++) {
+      const filePath = path.join(dirPath, files[i]);
+      const stats = fs.statSync(filePath);
+      if (stats.isDirectory()) {
+        size += getDirectorySize(filePath);
+      } else {
+        size += stats.size;
+      }
+    }
+  } catch (e) {
+    // Ignore folder read errors (like locked files)
+  }
+  return size;
+}
+
+function getCacheSize() {
+  const cachePath = path.join(BIN_DIR, 'cache');
+  return getDirectorySize(cachePath);
+}
+
+// API Endpoints
 app.get('/api/status', (req, res) => {
   res.json({
     rcloneStatus,
     downloadProgress,
     winfspInstalled: checkWinFsp(),
     mounted: activeMountProcess !== null,
-    mountConfig: activeMountConfig
+    mountConfig: activeMountConfig,
+    cacheSize: getCacheSize()
   });
+});
+
+app.post('/api/cache/clear', (req, res) => {
+  if (activeMountProcess) {
+    return res.status(400).json({ error: 'No se puede limpiar el caché mientras el disco esté montado.' });
+  }
+  
+  logToUI('Clearing local VFS cache folder...');
+  try {
+    const cachePath = path.join(BIN_DIR, 'cache');
+    if (fs.existsSync(cachePath)) {
+      fs.rmSync(cachePath, { recursive: true, force: true });
+    }
+    logToUI('Local VFS cache cleared successfully!', 'success');
+    res.json({ message: 'Caché local limpiado con éxito.' });
+  } catch (error) {
+    logToUI(`Error clearing VFS cache: ${error.message}`, 'error');
+    res.status(500).json({ error: 'No se pudo limpiar la carpeta de caché. Algunos archivos podrían estar bloqueados por Windows.' });
+  }
 });
 
 // Windows Startup Shortcut manager
@@ -535,7 +582,8 @@ function performMount(remote, letter, method, volumeName = 'Nubes Unidas') {
       '--addr', `127.0.0.1:${port}`,
       '--vfs-cache-mode', 'full',
       '--onedrive-chunk-size', '64M',
-      '--buffer-size', '32M'
+      '--buffer-size', '32M',
+      '--cache-dir', path.join(BIN_DIR, 'cache')
     ];
     
     const child = spawn(RCLONE_EXE, processArgs);
@@ -594,7 +642,8 @@ function performMount(remote, letter, method, volumeName = 'Nubes Unidas') {
       '--vfs-cache-mode', 'full',
       '--volname', volumeName,
       '--onedrive-chunk-size', '64M',
-      '--buffer-size', '32M'
+      '--buffer-size', '32M',
+      '--cache-dir', path.join(BIN_DIR, 'cache')
     ];
 
     const child = spawn(RCLONE_EXE, processArgs);

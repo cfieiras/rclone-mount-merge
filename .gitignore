@@ -13,6 +13,8 @@ bin/rclone.zip
 # Private configuration and credentials
 bin/rclone.conf
 bin/mount_config.json
+bin/cache/
+
 
 # IDEs and OS files
 .vscode/

@@ -21,6 +21,10 @@ const statusWinfspIndicator = document.querySelector('#status-winfsp .status-ind
 const statusMountText = document.getElementById('status-mount-text');
 const statusMountIndicator = document.querySelector('#status-mount .status-indicator');
 
+const statusCacheText = document.getElementById('status-cache-text');
+const statusCacheIndicator = document.querySelector('#status-cache .status-indicator');
+const btnClearCache = document.getElementById('btn-clear-cache');
+
 const btnAddOneDrive = document.getElementById('btn-add-onedrive');
 const btnManualConfig = document.getElementById('btn-manual-config');
 const btnClearLogs = document.getElementById('btn-clear-logs');
@@ -187,6 +191,16 @@ function updateSystemStatus(status) {
 
   // Mount Status
   updateMountStatus(status.mounted, status.mountConfig);
+
+  // Cache Status
+  if (status.cacheSize !== undefined) {
+    statusCacheText.innerText = formatBytes(status.cacheSize);
+    if (status.cacheSize > 0) {
+      statusCacheIndicator.className = 'status-indicator ready';
+    } else {
+      statusCacheIndicator.className = 'status-indicator idle';
+    }
+  }
 }
 
 // Update Drive Mounting Controls
@@ -212,6 +226,7 @@ function updateMountStatus(mounted, config) {
         inputVolumeName.value = config.volumeName;
       }
     }
+    btnClearCache.disabled = true;
   } else {
     statusMountText.innerText = 'Sin montar';
     statusMountIndicator.className = 'status-indicator idle';
@@ -228,6 +243,7 @@ function updateMountStatus(mounted, config) {
     if (inputVolumeName) {
       inputVolumeName.disabled = false;
     }
+    btnClearCache.disabled = false;
   }
 }
 
@@ -697,6 +713,30 @@ chkAutoStart.addEventListener('change', async () => {
     chkAutoStart.checked = !enabled;
   } finally {
     chkAutoStart.disabled = false;
+  }
+});
+
+btnClearCache.addEventListener('click', async () => {
+  if (!confirm('¿Estás seguro de que deseas vaciar el caché local temporal? Esto eliminará todos los archivos locales descargados temporalmente para liberar espacio en disco. Tus archivos en la nube no se verán afectados.')) return;
+
+  btnClearCache.disabled = true;
+  btnClearCache.innerText = 'Vaciando...';
+  try {
+    const res = await fetch('/api/cache/clear', { method: 'POST' });
+    const data = await res.json();
+    if (res.ok) {
+      appendLog('Caché local de Rclone vaciado con éxito.', 'success');
+      statusCacheText.innerText = '0 Bytes';
+      statusCacheIndicator.className = 'status-indicator idle';
+      alert('Caché local vaciado correctamente.');
+    } else {
+      alert(`Error al vaciar el caché: ${data.error}`);
+    }
+  } catch (e) {
+    alert('Error al comunicar la orden de limpieza al servidor.');
+  } finally {
+    btnClearCache.disabled = false;
+    btnClearCache.innerText = 'Vaciar';
   }
 });
 
