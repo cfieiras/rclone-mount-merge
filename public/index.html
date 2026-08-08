@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rclone Cloud Merger & Mapper</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="glow-bg"></div>
+  
+  <!-- Loading overlay for downloader -->
+  <div id="loader-overlay" class="loader-overlay hidden">
+    <div class="loader-card">
+      <div class="spinner"></div>
+      <h2 id="loader-title">Preparando Entorno</h2>
+      <p id="loader-desc">Verificando binarios de Rclone en tu sistema...</p>
+      <div class="progress-bar-container">
+        <div id="loader-progress" class="progress-bar-fill" style="width: 0%;"></div>
+      </div>
+    </div>
+  </div>
+
+  <main class="container">
+    <header class="app-header">
+      <div class="logo-area">
+        <div class="logo-icon">▲</div>
+        <h1>Rclone Cloud Merger</h1>
+      </div>
+      <p class="subtitle">Integra múltiples nubes en un solo disco virtual mapeado en Windows</p>
+    </header>
+
+    <!-- System Status Row -->
+    <section class="status-row">
+      <div class="status-card" id="status-rclone">
+        <div class="status-indicator ready"></div>
+        <div class="status-info">
+          <h3>Rclone Core</h3>
+          <p id="status-rclone-text">Verificando...</p>
+        </div>
+      </div>
+      
+      <div class="status-card" id="status-winfsp">
+        <div class="status-indicator warn"></div>
+        <div class="status-info">
+          <h3>Soporte WinFsp</h3>
+          <p id="status-winfsp-text">Verificando...</p>
+        </div>
+      </div>
+
+      <div class="status-card" id="status-mount">
+        <div class="status-indicator idle"></div>
+        <div class="status-info">
+          <h3>Unidad Virtual</h3>
+          <p id="status-mount-text">Sin montar</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Main Workspace Grid -->
+    <div class="workspace-grid">
+      
+      <!-- Left Panel: Connected Accounts -->
+      <section class="panel-left card">
+        <div class="card-header">
+          <h2>Cuentas Cloud Conectadas</h2>
+          <div class="card-actions">
+            <button id="btn-add-onedrive" class="btn btn-primary">
+              <span class="btn-icon">+</span> OneDrive
+            </button>
+            <button id="btn-manual-config" class="btn btn-secondary" title="Abrir consola para otros servicios de almacenamiento">
+              Config. Manual
+            </button>
+          </div>
+        </div>
+
+        <div id="drives-container" class="drives-list">
+          <!-- Dynamically populated -->
+          <div class="empty-state">
+            <p>No hay cuentas de almacenamiento configuradas aún.</p>
+            <p class="sub-text">Haz clic en "+ OneDrive" para añadir tu primera cuenta.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Right Panel: Merger and Mapper -->
+      <div class="panel-right">
+        
+        <!-- Union Builder Card -->
+        <section class="card union-card">
+          <h2>Fusión de Disco Virtual</h2>
+          <p class="card-desc">Selecciona las cuentas conectadas que deseas agrupar en un único disco virtual unificado:</p>
+          
+          <div id="union-select-list" class="union-select-list">
+            <!-- Populated via JS -->
+            <p class="empty-state-small">Conecta al menos dos cuentas en la izquierda para fusionarlas.</p>
+          </div>
+
+          <div class="union-actions">
+            <div class="union-status" id="union-current-status">
+              <strong>Estado de Fusión:</strong> <span class="badge" id="union-status-badge">No configurado</span>
+            </div>
+            <button id="btn-create-union" class="btn btn-accent" disabled>
+              Integrar en Disco Virtual
+            </button>
+          </div>
+        </section>
+
+        <!-- Mapper Card -->
+        <section class="card mapper-card">
+          <h2>Mapear en Explorador de Windows</h2>
+          <p class="card-desc">Asigna el disco virtual unificado a una letra de unidad en Windows para acceder desde el Explorador de Archivos:</p>
+          
+          <div class="mapper-form">
+            <div class="form-group">
+              <label for="select-drive-letter">Letra de Unidad</label>
+              <select id="select-drive-letter" class="form-select">
+                <!-- Populated dynamically -->
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="input-volume-name">Nombre del Disco</label>
+              <input type="text" id="input-volume-name" class="form-input" value="Nubes Unidas" placeholder="Ej. Mi Disco" style="padding: 10px; font-size: 15px;">
+            </div>
+
+            <div class="form-group" id="group-mount-method">
+              <label for="select-mount-method">Método de Montaje</label>
+              <select id="select-mount-method" class="form-select">
+                <option value="winfsp">Nativo (WinFsp) - Recomendado</option>
+                <option value="webdav">Unidad de Red (WebDAV Fallback)</option>
+              </select>
+            </div>
+          </div>
+
+          <div id="winfsp-alert-banner" class="alert-banner hidden">
+            <strong>⚠️ WinFsp No Detectado:</strong> El montaje nativo requiere instalar WinFsp. Se usará el respaldo WebDAV, o puedes <a href="https://github.com/winfsp/winfsp/releases" target="_blank" class="download-link">descargar WinFsp aquí</a> y reiniciar esta app.
+          </div>
+
+          <div class="mapper-actions" style="justify-content: space-between; align-items: center; gap: 15px;">
+            <label class="checkbox-container">
+              <input type="checkbox" id="chk-auto-start">
+              <span>Iniciar con Windows</span>
+            </label>
+            <button id="btn-toggle-mount" class="btn btn-glowing" style="width: auto; min-width: 160px;" disabled>
+              Montar Unidad
+            </button>
+          </div>
+        </section>
+
+      </div>
+    </div>
+
+    <!-- Logger Section -->
+    <section class="card log-card">
+      <div class="card-header">
+        <h2>Registro de Actividad</h2>
+        <button id="btn-clear-logs" class="btn btn-small">Limpiar Consola</button>
+      </div>
+      <div id="terminal" class="terminal">
+        <div class="terminal-line system">--- Consola de actividad inicializada ---</div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Add OneDrive Dialog Modal -->
+  <div id="modal-add" class="modal-overlay hidden">
+    <div class="modal">
+      <h2>Conectar cuenta OneDrive</h2>
+      <p>Introduce un nombre descriptivo para identificar esta cuenta de 1TB (por ejemplo: <code>onedrive_trabajo</code> o <code>onedrive_personal</code>).</p>
+      
+      <div class="form-group">
+        <label for="input-drive-name">Nombre de la Cuenta</label>
+        <input type="text" id="input-drive-name" placeholder="Ej. onedrive_1" class="form-input" autocomplete="off">
+        <span class="input-hint">Sin espacios ni caracteres especiales. Solo letras, números y guiones bajos.</span>
+      </div>
+
+      <div class="modal-actions">
+        <button id="btn-modal-cancel" class="btn btn-secondary">Cancelar</button>
+        <button id="btn-modal-confirm" class="btn btn-primary">Comenzar Autorización</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- OAuth Loading Modal -->
+  <div id="modal-oauth" class="modal-overlay hidden">
+    <div class="modal text-center">
+      <div class="spinner spinner-large"></div>
+      <h2>Autorizando en tu Navegador</h2>
+      <p id="oauth-status-text">Se ha abierto una pestaña en tu navegador web. Por favor, inicia sesión en Microsoft y autoriza la aplicación.</p>
+      <p class="sub-text">La consola responderá y guardará la cuenta automáticamente cuando completes el proceso.</p>
+      <div class="oauth-console" id="oauth-console">
+        <!-- Live rclone output during config -->
+      </div>
+      <div class="modal-actions" style="width: 100%; justify-content: center; margin-top: 10px;">
+        <button id="btn-oauth-cancel" class="btn btn-secondary">Cancelar Proceso</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

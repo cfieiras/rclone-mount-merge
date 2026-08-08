@@ -1,0 +1,21 @@
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.env
+
+# Rclone binaries and temp zip (downloaded programmatically)
+bin/rclone.exe
+bin/rclone-temp/
+bin/rclone.zip
+
+# Private configuration and credentials
+bin/rclone.conf
+bin/mount_config.json
+
+# IDEs and OS files
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini
