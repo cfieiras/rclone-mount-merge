@@ -162,6 +162,64 @@
           </div>
         </section>
 
+        <!-- Transfer Card -->
+        <section class="card transfer-card">
+          <h2>Transferencia Directa (Copy / Sync)</h2>
+          <p class="card-desc">Sube o sincroniza carpetas locales directamente a la nube de fondo sin pasar por el explorador:</p>
+          
+          <div class="transfer-form">
+            <div class="form-group" style="grid-column: span 2;">
+              <label>Modo de Operación</label>
+              <div class="toggle-buttons">
+                <button type="button" id="btn-mode-copy" class="btn-toggle active" data-mode="copy">Copiar (Seguro)</button>
+                <button type="button" id="btn-mode-sync" class="btn-toggle" data-mode="sync" title="Advertencia: Borrará archivos en el destino que no existan en el origen">Sincronizar (Reemplazar)</button>
+              </div>
+            </div>
+
+            <div class="form-group" style="grid-column: span 2;">
+              <label for="input-transfer-source">Carpeta de Origen (Local en tu PC)</label>
+              <input type="text" id="input-transfer-source" class="form-input" placeholder="Ej. C:\MisArchivos\Fotos" style="padding: 10px; font-size: 15px;">
+            </div>
+
+            <div class="form-group">
+              <label for="select-transfer-dest">Nube de Destino</label>
+              <select id="select-transfer-dest" class="form-select">
+                <option value="combined">Unidad Fusionada (combined)</option>
+                <!-- Other drives added dynamically -->
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="input-transfer-subfolder">Subcarpeta en la Nube (Opcional)</label>
+              <input type="text" id="input-transfer-subfolder" class="form-input" placeholder="Ej. /Backup/Fotos" style="padding: 10px; font-size: 15px;">
+            </div>
+          </div>
+
+          <!-- Transfer Progress UI (Hidden by default) -->
+          <div id="transfer-progress-container" class="transfer-progress-box hidden">
+            <div class="progress-details">
+              <span id="transfer-progress-percent">0%</span>
+              <span id="transfer-progress-speed">0 MB/s</span>
+            </div>
+            <div class="progress-bar-container" style="margin: 10px 0;">
+              <div id="transfer-progress-bar-fill" class="progress-bar-fill" style="width: 0%;"></div>
+            </div>
+            <div class="progress-meta">
+              <div class="meta-item"><strong>Subido:</strong> <span id="transfer-progress-size">0 B / 0 B</span></div>
+              <div class="meta-item"><strong>Restante (ETA):</strong> <span id="transfer-progress-eta">calculando...</span></div>
+            </div>
+          </div>
+
+          <div class="transfer-actions">
+            <button id="btn-start-transfer" class="btn btn-accent" style="padding: 12px 20px;" disabled>
+              Iniciar Transferencia
+            </button>
+            <button id="btn-cancel-transfer" class="btn btn-danger hidden" style="padding: 12px 20px;">
+              Cancelar Transferencia
+            </button>
+          </div>
+        </section>
+
       </div>
     </div>
 

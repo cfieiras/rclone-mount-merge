@@ -37,7 +37,23 @@ const unionStatusBadge = document.getElementById('union-status-badge');
 const selectDriveLetter = document.getElementById('select-drive-letter');
 const selectMountMethod = document.getElementById('select-mount-method');
 const winfspAlertBanner = document.getElementById('winfsp-alert-banner');
-const terminal = document.getElementById('terminal');
+// Transfer Direct Card Elements
+const btnModeCopy = document.getElementById('btn-mode-copy');
+const btnModeSync = document.getElementById('btn-mode-sync');
+const inputTransferSource = document.getElementById('input-transfer-source');
+const selectTransferDest = document.getElementById('select-transfer-dest');
+const inputTransferSubfolder = document.getElementById('input-transfer-subfolder');
+const btnStartTransfer = document.getElementById('btn-start-transfer');
+const btnCancelTransfer = document.getElementById('btn-cancel-transfer');
+const transferProgressContainer = document.getElementById('transfer-progress-container');
+const transferProgressPercent = document.getElementById('transfer-progress-percent');
+const transferProgressSpeed = document.getElementById('transfer-progress-speed');
+const transferProgressBarFill = document.getElementById('transfer-progress-bar-fill');
+const transferProgressSize = document.getElementById('transfer-progress-size');
+const transferProgressEta = document.getElementById('transfer-progress-eta');
+
+let activeTransferMode = 'copy';
+let isTransferRunning = false;
 
 // Modals
 const modalAdd = document.getElementById('modal-add');
@@ -90,6 +106,19 @@ function initSocket() {
       case 'mount_failed':
         appendLog(`Error al montar: ${msg.error}`, 'error');
         alert(msg.error);
+        break;
+
+      case 'transfer_status':
+        updateTransferStatus(msg.running, msg.stats);
+        if (msg.running === false && msg.success !== undefined) {
+          if (msg.success) {
+            appendLog(`¡Transferencia de fondo completada con éxito!`, 'success');
+            alert('¡Transferencia completada con éxito!');
+          } else {
+            appendLog(`La transferencia falló o fue cancelada: ${msg.error || ''}`, 'error');
+            alert(`La transferencia falló o fue cancelada: ${msg.error || ''}`);
+          }
+        }
         break;
     }
   };
@@ -201,6 +230,11 @@ function updateSystemStatus(status) {
       statusCacheIndicator.className = 'status-indicator idle';
     }
   }
+
+  // Transfer Status
+  if (status.transferRunning !== undefined) {
+    updateTransferStatus(status.transferRunning, status.transferStats);
+  }
 }
 
 // Update Drive Mounting Controls
@@ -247,6 +281,75 @@ function updateMountStatus(mounted, config) {
   }
 }
 
+// Render transfer destination select options based on drivesData
+function renderTransferDestOptions() {
+  if (!selectTransferDest) return;
+  const currentVal = selectTransferDest.value;
+  selectTransferDest.innerHTML = '';
+  
+  // If union exists, add combined
+  const hasUnion = drivesData.some(d => d.name === 'combined');
+  if (hasUnion) {
+    const opt = document.createElement('option');
+    opt.value = 'combined';
+    opt.innerText = 'Unidad Fusionada (combined)';
+    selectTransferDest.appendChild(opt);
+  }
+  
+  // Add other individual remotes
+  drivesData.forEach(d => {
+    if (d.name !== 'combined') {
+      const opt = document.createElement('option');
+      opt.value = d.name;
+      opt.innerText = `${d.name} (${d.type})`;
+      selectTransferDest.appendChild(opt);
+    }
+  });
+
+  if (currentVal && selectTransferDest.querySelector(`option[value="${currentVal}"]`)) {
+    selectTransferDest.value = currentVal;
+  }
+}
+
+// Update Transfer Card controls and progress details
+function updateTransferStatus(running, stats) {
+  isTransferRunning = running;
+  
+  const hasAnyRemote = drivesData.length > 0;
+  btnStartTransfer.disabled = running || !hasAnyRemote;
+
+  if (running) {
+    btnStartTransfer.classList.add('hidden');
+    btnCancelTransfer.classList.remove('hidden');
+    
+    inputTransferSource.disabled = true;
+    selectTransferDest.disabled = true;
+    inputTransferSubfolder.disabled = true;
+    btnModeCopy.disabled = true;
+    btnModeSync.disabled = true;
+    
+    if (stats) {
+      transferProgressContainer.classList.remove('hidden');
+      transferProgressPercent.innerText = `${stats.progress}%`;
+      transferProgressBarFill.style.width = `${stats.progress}%`;
+      transferProgressSpeed.innerText = stats.speed;
+      transferProgressSize.innerText = `${stats.transferred} / ${stats.total}`;
+      transferProgressEta.innerText = stats.eta;
+    }
+  } else {
+    btnStartTransfer.classList.remove('hidden');
+    btnCancelTransfer.classList.add('hidden');
+    
+    inputTransferSource.disabled = false;
+    selectTransferDest.disabled = false;
+    inputTransferSubfolder.disabled = false;
+    btnModeCopy.disabled = false;
+    btnModeSync.disabled = false;
+    
+    transferProgressContainer.classList.add('hidden');
+  }
+}
+
 // Fetch configured accounts & details
 async function refreshData() {
   try {
@@ -256,6 +359,7 @@ async function refreshData() {
     renderDrivesList();
     renderUnionSelectionList();
     updateUnionStatus();
+    renderTransferDestOptions();
     
     // Populate letters if empty
     if (selectDriveLetter.children.length === 0) {
@@ -737,6 +841,75 @@ btnClearCache.addEventListener('click', async () => {
   } finally {
     btnClearCache.disabled = false;
     btnClearCache.innerText = 'Vaciar';
+  }
+});
+
+// Transfer Mode Toggles
+btnModeCopy.addEventListener('click', () => {
+  activeTransferMode = 'copy';
+  btnModeCopy.classList.add('active');
+  btnModeSync.classList.remove('active');
+});
+
+btnModeSync.addEventListener('click', () => {
+  if (confirm('ADVERTENCIA: La sincronización (Sync) hará que la carpeta destino sea idéntica al origen. Si hay archivos en la nube de destino que no están en tu carpeta local de origen, SE ELIMINARÁN permanentemente.\n\n¿Estás seguro de que deseas seleccionar el modo Sincronizar?')) {
+    activeTransferMode = 'sync';
+    btnModeSync.classList.add('active');
+    btnModeCopy.classList.remove('active');
+  }
+});
+
+// Start Transfer Button click
+btnStartTransfer.addEventListener('click', async () => {
+  const source = inputTransferSource.value.trim();
+  const destination = selectTransferDest.value;
+  const subfolder = inputTransferSubfolder.value.trim();
+
+  if (!source) {
+    alert('Por favor, introduce la ruta de origen local.');
+    return;
+  }
+
+  btnStartTransfer.disabled = true;
+  btnStartTransfer.innerText = 'Iniciando...';
+
+  try {
+    const res = await fetch('/api/transfer/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: activeTransferMode, source, destination, subfolder })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      alert(`Error al iniciar transferencia: ${data.error}`);
+      btnStartTransfer.disabled = false;
+      btnStartTransfer.innerText = 'Iniciar Transferencia';
+    }
+  } catch (e) {
+    alert('Error al conectar con el servidor.');
+    btnStartTransfer.disabled = false;
+    btnStartTransfer.innerText = 'Iniciar Transferencia';
+  }
+});
+
+// Cancel Transfer Button click
+btnCancelTransfer.addEventListener('click', async () => {
+  if (!confirm('¿Estás seguro de que deseas cancelar la transferencia en curso? El proceso se detendrá inmediatamente.')) return;
+
+  btnCancelTransfer.disabled = true;
+  btnCancelTransfer.innerText = 'Cancelando...';
+  try {
+    const res = await fetch('/api/transfer/cancel', { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok) {
+      alert(`Error al cancelar transferencia: ${data.error}`);
+      btnCancelTransfer.disabled = false;
+      btnCancelTransfer.innerText = 'Cancelar Transferencia';
+    }
+  } catch (e) {
+    alert('Error al conectar con el servidor.');
+    btnCancelTransfer.disabled = false;
+    btnCancelTransfer.innerText = 'Cancelar Transferencia';
   }
 });
 

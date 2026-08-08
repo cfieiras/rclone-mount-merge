@@ -21,6 +21,8 @@ let downloadProgress = '';
 let activeMountProcess = null;
 let activeMountConfig = null; // { remote, letter, type }
 let activeConfigProcess = null;
+let activeTransferProcess = null;
+let activeTransferStats = null;
 
 // Ensure directories exist
 if (!fs.existsSync(BIN_DIR)) {
@@ -200,7 +202,9 @@ app.get('/api/status', (req, res) => {
     winfspInstalled: checkWinFsp(),
     mounted: activeMountProcess !== null,
     mountConfig: activeMountConfig,
-    cacheSize: getCacheSize()
+    cacheSize: getCacheSize(),
+    transferRunning: activeTransferProcess !== null,
+    transferStats: activeTransferStats
   });
 });
 
@@ -742,16 +746,129 @@ app.post('/api/unmount', (req, res) => {
   }
 });
 
+// Transfer Start & Cancel Endpoints
+app.post('/api/transfer/start', (req, res) => {
+  const { mode, source, destination, subfolder } = req.body;
+  if (activeTransferProcess) {
+    return res.status(400).json({ error: 'Ya hay una transferencia en curso.' });
+  }
+
+  if (!source || !destination) {
+    return res.status(400).json({ error: 'Falta origen o destino.' });
+  }
+
+  let destRemote = destination;
+  if (subfolder) {
+    const cleanSub = subfolder.replace(/^\/+/, '').replace(/\/+$/, '');
+    if (cleanSub) {
+      destRemote = `${destination}:${cleanSub}`;
+    } else {
+      destRemote = `${destination}:`;
+    }
+  } else {
+    destRemote = `${destination}:`;
+  }
+
+  logToUI(`Starting ${mode} from "${source}" to "${destRemote}"...`);
+
+  const command = mode === 'sync' ? 'sync' : 'copy';
+  const processArgs = [
+    '--config', RCLONE_CONF,
+    command,
+    source,
+    destRemote,
+    '--stats', '1s',
+    '--stats-one-line',
+    '--onedrive-chunk-size', '100M',
+    '--buffer-size', '32M'
+  ];
+
+  const child = spawn(RCLONE_EXE, processArgs);
+  activeTransferProcess = child;
+  activeTransferStats = {
+    mode,
+    source,
+    destination: destRemote,
+    progress: 0,
+    speed: '0 B/s',
+    transferred: '0 B',
+    total: '0 B',
+    eta: 'calculando...'
+  };
+
+  broadcast({ type: 'transfer_status', running: true, stats: activeTransferStats });
+
+  let buffer = '';
+  const handleOutput = (data) => {
+    buffer += data.toString();
+    const lines = buffer.split(/\r?\n/);
+    buffer = lines.pop(); // keep partial line
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      
+      logToUI(`[TRANSFER LOG] ${trimmed}`);
+
+      // Regex to parse stats-one-line
+      // Format: 2026/08/08 13:16:00 INFO  : 2.311 GiB / 10.450 GiB, 22%, 14.512 MiB/s, ETA 9m42s
+      const match = trimmed.match(/([\d\.]+\s*[KMGT]i?B)\s*\/\s*([\d\.]+\s*[KMGT]i?B),\s*(\d+)%,\s*([\d\.]+\s*[KMGT]i?s?B\/s|[\d\.]+\s*[KMGT]i?B\/s),\s*ETA\s*([^\s,\(\)]+)/i);
+      
+      if (match) {
+        activeTransferStats.transferred = match[1];
+        activeTransferStats.total = match[2];
+        activeTransferStats.progress = parseInt(match[3], 10);
+        activeTransferStats.speed = match[4];
+        activeTransferStats.eta = match[5];
+        
+        broadcast({ type: 'transfer_status', running: true, stats: activeTransferStats });
+      }
+    }
+  };
+
+  child.stdout.on('data', handleOutput);
+  child.stderr.on('data', handleOutput);
+
+  child.on('close', (code) => {
+    logToUI(`Transfer process exited with code ${code}`);
+    activeTransferProcess = null;
+    const finalStats = activeTransferStats;
+    activeTransferStats = null;
+    
+    if (code === 0) {
+      logToUI('Transfer completed successfully!', 'success');
+      broadcast({ type: 'transfer_status', running: false, success: true, stats: finalStats });
+    } else {
+      logToUI(`Transfer failed or was cancelled. Code: ${code}`, 'error');
+      broadcast({ type: 'transfer_status', running: false, success: false, error: `El proceso terminó con código ${code}` });
+    }
+    checkAutoShutdown();
+  });
+
+  res.json({ status: 'transferring' });
+});
+
+app.post('/api/transfer/cancel', (req, res) => {
+  if (activeTransferProcess) {
+    logToUI('Cancelling active transfer process...');
+    activeTransferProcess.kill('SIGTERM');
+    activeTransferProcess = null;
+    activeTransferStats = null;
+    return res.json({ message: 'Transferencia cancelada con éxito.' });
+  }
+  res.status(400).json({ error: 'No hay ninguna transferencia en curso.' });
+});
+
 // Auto-shutdown state
 let activeConnections = 0;
 let shutdownTimeout = null;
 
 function checkAutoShutdown() {
-  if (activeConnections === 0 && !activeMountProcess) {
-    logToUI('No active connections and no active mounts. Server will exit in 5 seconds...');
+  if (activeConnections === 0 && !activeMountProcess && !activeTransferProcess) {
+    logToUI('No active connections and no active mounts or transfers. Server will exit in 5 seconds...');
     if (shutdownTimeout) clearTimeout(shutdownTimeout);
     shutdownTimeout = setTimeout(() => {
-      logToUI('Auto-shutdown: No clients or mounts remaining. Closing server.', 'system');
+      logToUI('Auto-shutdown: No clients, mounts, or transfers remaining. Closing server.', 'system');
       process.exit(0);
     }, 5000);
   }
