@@ -27,6 +27,7 @@ const btnClearCache = document.getElementById('btn-clear-cache');
 
 const btnAddOneDrive = document.getElementById('btn-add-onedrive');
 const btnManualConfig = document.getElementById('btn-manual-config');
+const btnAppShutdown = document.getElementById('btn-app-shutdown');
 const btnClearLogs = document.getElementById('btn-clear-logs');
 const btnCreateUnion = document.getElementById('btn-create-union');
 const btnToggleMount = document.getElementById('btn-toggle-mount');
@@ -54,6 +55,7 @@ const transferProgressEta = document.getElementById('transfer-progress-eta');
 
 let activeTransferMode = 'copy';
 let isTransferRunning = false;
+let activeTransferStats = null;
 
 // Modals
 const modalAdd = document.getElementById('modal-add');
@@ -314,6 +316,7 @@ function renderTransferDestOptions() {
 // Update Transfer Card controls and progress details
 function updateTransferStatus(running, stats) {
   isTransferRunning = running;
+  if (stats) activeTransferStats = stats;
   
   const hasAnyRemote = drivesData.length > 0;
   btnStartTransfer.disabled = running || !hasAnyRemote;
@@ -360,6 +363,7 @@ async function refreshData() {
     renderUnionSelectionList();
     updateUnionStatus();
     renderTransferDestOptions();
+    updateTransferStatus(isTransferRunning, activeTransferStats);
     
     // Populate letters if empty
     if (selectDriveLetter.children.length === 0) {
@@ -910,6 +914,44 @@ btnCancelTransfer.addEventListener('click', async () => {
     alert('Error al conectar con el servidor.');
     btnCancelTransfer.disabled = false;
     btnCancelTransfer.innerText = 'Cancelar Transferencia';
+  }
+});
+
+// Shutdown Application Button click
+btnAppShutdown.addEventListener('click', async () => {
+  if (!confirm('¿Estás seguro de que deseas apagar la aplicación por completo?\n\nEsto desmontará el disco virtual, detendrá cualquier transferencia o configuración activa y cerrará el servidor local.')) return;
+
+  btnAppShutdown.disabled = true;
+  btnAppShutdown.innerText = 'Apagando...';
+  appendLog('Apagando servidor y deteniendo todos los procesos...', 'warn');
+
+  try {
+    const res = await fetch('/api/shutdown', { method: 'POST' });
+    if (res.ok) {
+      loaderOverlay.classList.remove('hidden');
+      document.getElementById('loader-title').innerText = 'Aplicación Apagada';
+      document.getElementById('loader-desc').innerText = 'El servidor local se ha detenido con éxito. Ya puedes cerrar esta ventana.';
+      const progressBarContainer = document.getElementById('loader-progress').parentElement;
+      if (progressBarContainer) progressBarContainer.style.display = 'none';
+      
+      setTimeout(() => {
+        window.close();
+      }, 1500);
+    } else {
+      alert('Error al apagar el servidor.');
+      btnAppShutdown.disabled = false;
+      btnAppShutdown.innerText = 'Apagar Aplicación';
+    }
+  } catch (e) {
+    // Connection lost = server went down successfully
+    loaderOverlay.classList.remove('hidden');
+    document.getElementById('loader-title').innerText = 'Aplicación Apagada';
+    document.getElementById('loader-desc').innerText = 'El servidor local se ha detenido con éxito. Ya puedes cerrar esta ventana.';
+    const progressBarContainer = document.getElementById('loader-progress').parentElement;
+    if (progressBarContainer) progressBarContainer.style.display = 'none';
+    setTimeout(() => {
+      window.close();
+    }, 1500);
   }
 });
 

@@ -98,12 +98,19 @@ body {
 }
 
 .app-header {
-  text-align: left;
   border-bottom: 1px solid var(--card-border);
   padding-bottom: 20px;
   display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+}
+
+.header-left {
+  display: flex;
   flex-direction: column;
   gap: 5px;
+  text-align: left;
 }
 
 .logo-area {

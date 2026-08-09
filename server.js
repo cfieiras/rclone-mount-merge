@@ -859,6 +859,52 @@ app.post('/api/transfer/cancel', (req, res) => {
   res.status(400).json({ error: 'No hay ninguna transferencia en curso.' });
 });
 
+// Clean exit process handler
+function cleanExit() {
+  console.log('Cleaning up subprocesses before exit...');
+  
+  // Unmount WebDAV drive if active
+  if (activeMountConfig && activeMountConfig.type === 'webdav') {
+    try {
+      execSync(`net use ${activeMountConfig.letter}: /delete /y`, { stdio: 'ignore' });
+    } catch (e) {}
+  }
+  
+  // Cleanly terminate active child processes
+  if (activeMountProcess) {
+    try { activeMountProcess.kill('SIGKILL'); } catch (e) {}
+  }
+  if (activeConfigProcess) {
+    try { activeConfigProcess.kill('SIGKILL'); } catch (e) {}
+  }
+  if (activeTransferProcess) {
+    try { activeTransferProcess.kill('SIGKILL'); } catch (e) {}
+  }
+}
+
+// Bind process events to clean exit
+process.on('exit', cleanExit);
+process.on('SIGINT', () => {
+  cleanExit();
+  process.exit(0);
+});
+process.on('SIGTERM', () => {
+  cleanExit();
+  process.exit(0);
+});
+
+// Explicit Shutdown Endpoint
+app.post('/api/shutdown', (req, res) => {
+  logToUI('Manual shutdown requested. Stopping all services and exiting...', 'warn');
+  res.json({ message: 'Apagando el servidor local...' });
+  
+  // Wait 1 second to let response reach the client, then terminate
+  setTimeout(() => {
+    cleanExit();
+    process.exit(0);
+  }, 1000);
+});
+
 // Auto-shutdown state
 let activeConnections = 0;
 let shutdownTimeout = null;
@@ -892,7 +938,10 @@ wss.on('connection', (ws) => {
       rcloneStatus,
       winfspInstalled: checkWinFsp(),
       mounted: activeMountProcess !== null,
-      mountConfig: activeMountConfig
+      mountConfig: activeMountConfig,
+      cacheSize: getCacheSize(),
+      transferRunning: activeTransferProcess !== null,
+      transferStats: activeTransferStats
     }
   }));
 
