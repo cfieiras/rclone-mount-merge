@@ -793,7 +793,8 @@ app.post('/api/transfer/start', (req, res) => {
     speed: '0 B/s',
     transferred: '0 B',
     total: '0 B',
-    eta: 'calculando...'
+    eta: 'calculando...',
+    lastLog: 'Iniciando...'
   };
 
   broadcast({ type: 'transfer_status', running: true, stats: activeTransferStats });
@@ -810,9 +811,12 @@ app.post('/api/transfer/start', (req, res) => {
       
       logToUI(`[TRANSFER LOG] ${trimmed}`);
 
-      // Regex to parse stats-one-line
-      // Format: 2026/08/08 13:16:00 INFO  : 2.311 GiB / 10.450 GiB, 22%, 14.512 MiB/s, ETA 9m42s
-      const match = trimmed.match(/([\d\.]+\s*[KMGT]i?B)\s*\/\s*([\d\.]+\s*[KMGT]i?B),\s*(\d+)%,\s*([\d\.]+\s*[KMGT]i?s?B\/s|[\d\.]+\s*[KMGT]i?B\/s),\s*ETA\s*([^\s,\(\)]+)/i);
+      // Extract a clean log message for UI display
+      const cleanLog = trimmed.replace(/^\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}:\d{2} \w+\s*:\s*/, '');
+      activeTransferStats.lastLog = cleanLog;
+
+      // Regex to parse stats-one-line using \w*B for universal unit matching
+      const match = trimmed.match(/([\d\.]+\s*\w*B)\s*\/\s*([\d\.]+\s*\w*B),\s*(\d+)%,\s*([\d\.]+\s*\w*B\/s),\s*ETA\s*([^\s,\(\)]+)/i);
       
       if (match) {
         activeTransferStats.transferred = match[1];
@@ -820,9 +824,9 @@ app.post('/api/transfer/start', (req, res) => {
         activeTransferStats.progress = parseInt(match[3], 10);
         activeTransferStats.speed = match[4];
         activeTransferStats.eta = match[5];
-        
-        broadcast({ type: 'transfer_status', running: true, stats: activeTransferStats });
       }
+      
+      broadcast({ type: 'transfer_status', running: true, stats: activeTransferStats });
     }
   };
 

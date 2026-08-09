@@ -52,6 +52,7 @@ const transferProgressSpeed = document.getElementById('transfer-progress-speed')
 const transferProgressBarFill = document.getElementById('transfer-progress-bar-fill');
 const transferProgressSize = document.getElementById('transfer-progress-size');
 const transferProgressEta = document.getElementById('transfer-progress-eta');
+const transferCurrentFile = document.getElementById('transfer-current-file');
 
 let activeTransferMode = 'copy';
 let isTransferRunning = false;
@@ -338,6 +339,9 @@ function updateTransferStatus(running, stats) {
       transferProgressSpeed.innerText = stats.speed;
       transferProgressSize.innerText = `${stats.transferred} / ${stats.total}`;
       transferProgressEta.innerText = stats.eta;
+      if (transferCurrentFile && stats.lastLog) {
+        transferCurrentFile.innerText = stats.lastLog;
+      }
     }
   } else {
     btnStartTransfer.classList.remove('hidden');
