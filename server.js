@@ -780,7 +780,13 @@ app.post('/api/transfer/start', (req, res) => {
     '--stats', '1s',
     '--stats-one-line',
     '--onedrive-chunk-size', '20M',
-    '--buffer-size', '32M'
+    '--buffer-size', '32M',
+    '--exclude', 'node_modules/**',
+    '--exclude', '.git/**',
+    '--exclude', 'bin/cache/**',
+    '--exclude', 'bin/rclone-temp/**',
+    '--exclude', 'Thumbs.db',
+    '--exclude', 'Desktop.ini'
   ];
 
   const child = spawn(RCLONE_EXE, processArgs);
