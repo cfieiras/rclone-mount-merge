@@ -779,6 +779,7 @@ app.post('/api/transfer/start', (req, res) => {
     destRemote,
     '--stats', '1s',
     '--stats-one-line',
+    '--log-level', 'INFO',
     '--onedrive-chunk-size', '20M',
     '--buffer-size', '32M',
     '--exclude', 'node_modules/**',
@@ -821,13 +822,14 @@ app.post('/api/transfer/start', (req, res) => {
       const cleanLog = trimmed.replace(/^\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}:\d{2} \w+\s*:\s*/, '');
       activeTransferStats.lastLog = cleanLog;
 
-      // Regex to parse stats-one-line using \w*B for universal unit matching
-      const match = trimmed.match(/([\d\.]+\s*\w*B)\s*\/\s*([\d\.]+\s*\w*B),\s*(\d+)%,\s*([\d\.]+\s*\w*B\/s),\s*ETA\s*([^\s,\(\)]+)/i);
+      // Bulletproof regex to parse stats-one-line under any unit and initial states
+      const match = trimmed.match(/([\d\.]+\s*\w*)\s*\/\s*([\d\.]+\s*\w*),\s*([\d\-]+)%?,\s*([\d\.]+\s*[\w\/]*),\s*ETA\s*([^\s,\(\)]+)/i);
       
       if (match) {
         activeTransferStats.transferred = match[1];
         activeTransferStats.total = match[2];
-        activeTransferStats.progress = parseInt(match[3], 10);
+        const pct = match[3];
+        activeTransferStats.progress = pct === '-' ? 0 : parseInt(pct, 10);
         activeTransferStats.speed = match[4];
         activeTransferStats.eta = match[5];
       }
