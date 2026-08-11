@@ -757,28 +757,45 @@ app.post('/api/transfer/start', (req, res) => {
     return res.status(400).json({ error: 'Falta origen o destino.' });
   }
 
-  let destRemote = destination;
-  if (subfolder) {
-    const cleanSub = subfolder.replace(/^\/+/, '').replace(/\/+$/, '');
-    if (cleanSub) {
-      destRemote = `${destination}:${cleanSub}`;
-    } else {
-      destRemote = `${destination}:`;
-    }
+// Transfer Queue System
+const transferQueue = [];
+
+function enqueueOrRunTransferTask(task) {
+  if (activeTransferProcess) {
+    transferQueue.push(task);
+    logToUI(`Transfer task added to queue (Position #${transferQueue.length}): ${task.action} "${task.sourceArg}" -> "${task.destArg}"`);
+    broadcast({ 
+      type: 'transfer_status', 
+      running: true, 
+      stats: activeTransferStats,
+      queueCount: transferQueue.length,
+      queue: transferQueue
+    });
+    return { status: 'queued', position: transferQueue.length, message: `Añadido a la cola de espera (Puesto #${transferQueue.length})` };
   } else {
-    destRemote = `${destination}:`;
+    runTransferTask(task);
+    return { status: 'started', message: 'Iniciando transferencia...' };
   }
+}
 
-  logToUI(`Starting ${mode} from "${source}" to "${destRemote}"...`);
+function processNextInQueue() {
+  if (activeTransferProcess || transferQueue.length === 0) return;
+  const nextTask = transferQueue.shift();
+  runTransferTask(nextTask);
+}
 
-  const command = mode === 'sync' ? 'sync' : 'copy';
+function runTransferTask(task) {
+  const { action, sourceArg, destArg } = task;
+  logToUI(`Starting ${action} from "${sourceArg}" to "${destArg}"...`);
+
   const processArgs = [
     '--config', RCLONE_CONF,
-    command,
-    source,
-    destRemote,
+    action,
+    sourceArg,
+    destArg,
     '--stats', '1s',
     '--stats-one-line',
+    '--log-level', 'INFO',
     '--onedrive-chunk-size', '20M',
     '--buffer-size', '32M',
     '--exclude', 'node_modules/**',
@@ -792,47 +809,45 @@ app.post('/api/transfer/start', (req, res) => {
   const child = spawn(RCLONE_EXE, processArgs);
   activeTransferProcess = child;
   activeTransferStats = {
-    mode,
-    source,
-    destination: destRemote,
+    mode: action,
+    source: sourceArg,
+    destination: destArg,
     progress: 0,
     speed: '0 B/s',
     transferred: '0 B',
     total: '0 B',
     eta: 'calculando...',
-    lastLog: 'Iniciando...'
+    lastLog: 'Iniciando...',
+    queueLength: transferQueue.length
   };
 
-  broadcast({ type: 'transfer_status', running: true, stats: activeTransferStats });
+  broadcast({ type: 'transfer_status', running: true, stats: activeTransferStats, queueCount: transferQueue.length, queue: transferQueue });
 
   let buffer = '';
   const handleOutput = (data) => {
     buffer += data.toString();
     const lines = buffer.split(/\r?\n/);
-    buffer = lines.pop(); // keep partial line
+    buffer = lines.pop();
 
     for (const line of lines) {
       const trimmed = line.trim();
       if (!trimmed) continue;
       
-      logToUI(`[TRANSFER LOG] ${trimmed}`);
-
-      // Extract a clean log message for UI display
+      logToUI(`[TRANSFER] ${trimmed}`);
       const cleanLog = trimmed.replace(/^\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}:\d{2} \w+\s*:\s*/, '');
       activeTransferStats.lastLog = cleanLog;
 
-      // Regex to parse stats-one-line using \w*B for universal unit matching
-      const match = trimmed.match(/([\d\.]+\s*\w*B)\s*\/\s*([\d\.]+\s*\w*B),\s*(\d+)%,\s*([\d\.]+\s*\w*B\/s),\s*ETA\s*([^\s,\(\)]+)/i);
-      
+      const match = trimmed.match(/([\d\.]+\s*\w*)\s*\/\s*([\d\.]+\s*\w*),\s*([\d\-]+)%?,\s*([\d\.]+\s*[\w\/]*),\s*ETA\s*([^\s,\(\)]+)/i);
       if (match) {
         activeTransferStats.transferred = match[1];
         activeTransferStats.total = match[2];
-        activeTransferStats.progress = parseInt(match[3], 10);
+        const pct = match[3];
+        activeTransferStats.progress = pct === '-' ? 0 : parseInt(pct, 10);
         activeTransferStats.speed = match[4];
         activeTransferStats.eta = match[5];
       }
-      
-      broadcast({ type: 'transfer_status', running: true, stats: activeTransferStats });
+      activeTransferStats.queueLength = transferQueue.length;
+      broadcast({ type: 'transfer_status', running: true, stats: activeTransferStats, queueCount: transferQueue.length, queue: transferQueue });
     }
   };
 
@@ -840,33 +855,52 @@ app.post('/api/transfer/start', (req, res) => {
   child.stderr.on('data', handleOutput);
 
   child.on('close', (code) => {
-    logToUI(`Transfer process exited with code ${code}`);
     activeTransferProcess = null;
     const finalStats = activeTransferStats;
     activeTransferStats = null;
-    
+
     if (code === 0) {
-      logToUI('Transfer completed successfully!', 'success');
-      broadcast({ type: 'transfer_status', running: false, success: true, stats: finalStats });
+      logToUI('Transfer task completed successfully!', 'success');
+      broadcast({ type: 'transfer_status', running: false, success: true, stats: finalStats, queueCount: transferQueue.length, queue: transferQueue });
     } else {
-      logToUI(`Transfer failed or was cancelled. Code: ${code}`, 'error');
-      broadcast({ type: 'transfer_status', running: false, success: false, error: `El proceso terminó con código ${code}` });
+      logToUI(`Transfer task failed or cancelled. Code: ${code}`, 'error');
+      broadcast({ type: 'transfer_status', running: false, success: false, error: `Código ${code}`, queueCount: transferQueue.length, queue: transferQueue });
     }
+
+    setTimeout(processNextInQueue, 500);
     checkAutoShutdown();
   });
+}
 
-  res.json({ status: 'transferring' });
+  let destRemote = destination;
+  if (subfolder) {
+    const cleanSub = subfolder.replace(/^\/+/, '').replace(/\/+$/, '');
+    if (cleanSub) {
+      destRemote = `${destination}:${cleanSub}`;
+    } else {
+      destRemote = `${destination}:`;
+    }
+  } else {
+    destRemote = `${destination}:`;
+  }
+
+  const action = mode === 'sync' ? 'sync' : 'copy';
+  const result = enqueueOrRunTransferTask({ action, sourceArg: source, destArg: destRemote });
+  res.json(result);
 });
 
 app.post('/api/transfer/cancel', (req, res) => {
+  const queueCleared = transferQueue.length;
+  transferQueue.length = 0; // Clear pending queue
+
   if (activeTransferProcess) {
-    logToUI('Cancelling active transfer process...');
+    logToUI('Cancelling active transfer process and clearing queue...');
     activeTransferProcess.kill('SIGTERM');
     activeTransferProcess = null;
     activeTransferStats = null;
-    return res.json({ message: 'Transferencia cancelada con éxito.' });
+    return res.json({ message: `Transferencia cancelada y ${queueCleared} tareas en cola eliminadas.` });
   }
-  res.status(400).json({ error: 'No hay ninguna transferencia en curso.' });
+  res.json({ message: `Cola de transferencias vaciada (${queueCleared} tareas eliminadas).` });
 });
 
 // -------------------------------------------------------------
@@ -1044,10 +1078,6 @@ app.post('/api/fs/operation', (req, res) => {
   }
 
   if (action === 'copy' || action === 'move' || action === 'sync') {
-    if (activeTransferProcess) {
-      return res.status(400).json({ error: 'Ya hay una operación de transferencia en curso.' });
-    }
-
     if (action !== 'sync' && (!items || items.length === 0)) {
       return res.status(400).json({ error: 'No se seleccionaron elementos.' });
     }
@@ -1067,87 +1097,8 @@ app.post('/api/fs/operation', (req, res) => {
       destArg = dstPath ? `${dstType}:${dstPath}` : `${dstType}:`;
     }
 
-    logToUI(`Starting ${action} from "${sourceArg}" to "${destArg}"...`);
-
-    const processArgs = [
-      '--config', RCLONE_CONF,
-      action,
-      sourceArg,
-      destArg,
-      '--stats', '1s',
-      '--stats-one-line',
-      '--log-level', 'INFO',
-      '--onedrive-chunk-size', '20M',
-      '--buffer-size', '32M',
-      '--exclude', 'node_modules/**',
-      '--exclude', '.git/**',
-      '--exclude', 'bin/cache/**',
-      '--exclude', 'bin/rclone-temp/**',
-      '--exclude', 'Thumbs.db',
-      '--exclude', 'Desktop.ini'
-    ];
-
-    const child = spawn(RCLONE_EXE, processArgs);
-    activeTransferProcess = child;
-    activeTransferStats = {
-      mode: action,
-      source: sourceArg,
-      destination: destArg,
-      progress: 0,
-      speed: '0 B/s',
-      transferred: '0 B',
-      total: '0 B',
-      eta: 'calculando...',
-      lastLog: 'Iniciando...'
-    };
-
-    broadcast({ type: 'transfer_status', running: true, stats: activeTransferStats });
-
-    let buffer = '';
-    const handleOutput = (data) => {
-      buffer += data.toString();
-      const lines = buffer.split(/\r?\n/);
-      buffer = lines.pop();
-
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-        
-        logToUI(`[EXPLORER OP] ${trimmed}`);
-        const cleanLog = trimmed.replace(/^\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}:\d{2} \w+\s*:\s*/, '');
-        activeTransferStats.lastLog = cleanLog;
-
-        const match = trimmed.match(/([\d\.]+\s*\w*)\s*\/\s*([\d\.]+\s*\w*),\s*([\d\-]+)%?,\s*([\d\.]+\s*[\w\/]*),\s*ETA\s*([^\s,\(\)]+)/i);
-        if (match) {
-          activeTransferStats.transferred = match[1];
-          activeTransferStats.total = match[2];
-          const pct = match[3];
-          activeTransferStats.progress = pct === '-' ? 0 : parseInt(pct, 10);
-          activeTransferStats.speed = match[4];
-          activeTransferStats.eta = match[5];
-        }
-        broadcast({ type: 'transfer_status', running: true, stats: activeTransferStats });
-      }
-    };
-
-    child.stdout.on('data', handleOutput);
-    child.stderr.on('data', handleOutput);
-
-    child.on('close', (code) => {
-      activeTransferProcess = null;
-      const finalStats = activeTransferStats;
-      activeTransferStats = null;
-      if (code === 0) {
-        logToUI('Operation completed successfully!', 'success');
-        broadcast({ type: 'transfer_status', running: false, success: true, stats: finalStats });
-      } else {
-        logToUI(`Operation failed or cancelled. Code: ${code}`, 'error');
-        broadcast({ type: 'transfer_status', running: false, success: false, error: `Código ${code}` });
-      }
-      checkAutoShutdown();
-    });
-
-    res.json({ status: 'started' });
+    const result = enqueueOrRunTransferTask({ action, sourceArg, destArg });
+    return res.json(result);
   }
 });
 

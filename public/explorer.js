@@ -78,17 +78,20 @@ function initSocket() {
     try {
       const msg = JSON.parse(event.data);
       if (msg.type === 'transfer_status') {
-        updateProgressUI(msg.running, msg.stats, msg.success, msg.error);
+        updateProgressUI(msg.running, msg.stats, msg.success, msg.error, msg.queueCount);
       }
     } catch (e) {}
   };
 }
 
-function updateProgressUI(running, stats, success, error) {
+function updateProgressUI(running, stats, success, error, queueCount) {
+  const qLen = (stats && stats.queueLength !== undefined) ? stats.queueLength : (queueCount || 0);
+  const queueBadge = qLen > 0 ? ` [📋 En cola: ${qLen}]` : '';
+
   if (running) {
     progressBox.classList.remove('hidden');
     if (stats) {
-      progressTitle.innerText = `Operación (${stats.mode}): ${stats.source} ➔ ${stats.destination}`;
+      progressTitle.innerText = `Operación (${stats.mode}): ${stats.source} ➔ ${stats.destination}${queueBadge}`;
       progressPercent.innerText = `${stats.progress}%`;
       progressBarFill.style.width = `${stats.progress}%`;
       progressSize.innerText = `${stats.transferred} / ${stats.total}`;
@@ -97,8 +100,10 @@ function updateProgressUI(running, stats, success, error) {
       if (stats.lastLog) progressLog.innerText = stats.lastLog;
     }
   } else {
-    if (success === true) {
-      progressLog.innerText = '¡Operación finalizada con éxito!';
+    if (qLen > 0) {
+      progressLog.innerText = `Iniciando siguiente tarea en cola... (${qLen} pendientes)`;
+    } else if (success === true) {
+      progressLog.innerText = '¡Todas las transferencias han finalizado con éxito!';
       progressPercent.innerText = '100%';
       progressBarFill.style.width = '100%';
       setTimeout(() => {
@@ -468,6 +473,9 @@ async function executeOperation(payload) {
     const data = await res.json();
     if (!res.ok) {
       alert(`Error iniciando operación: ${data.error}`);
+    } else if (data.status === 'queued') {
+      progressBox.classList.remove('hidden');
+      progressLog.innerText = `📌 Tarea agregada a la cola de espera (Puesto #${data.position})`;
     }
   } catch (e) {
     alert(`Error al conectar con el servidor: ${e.message}`);
