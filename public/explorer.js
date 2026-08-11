@@ -1,17 +1,26 @@
 // Visual File Explorer (Dual Pane) Client Controller
 
-let localCurrentPath = 'drives';
-let localItems = [];
-let selectedLocalPaths = new Set();
+const leftPane = {
+  mode: 'local', // 'local' or 'cloud'
+  remote: '',
+  path: 'drives',
+  items: [],
+  selected: new Set()
+};
 
-let cloudRemote = 'combined';
-let cloudCurrentPath = '';
-let cloudItems = [];
-let selectedCloudPaths = new Set();
+const rightPane = {
+  mode: 'cloud', // 'cloud' or 'local'
+  remote: 'combined',
+  path: '',
+  items: [],
+  selected: new Set()
+};
 
 let ws = null;
 
 // DOM Elements
+const selectLeftMode = document.getElementById('select-left-mode');
+const selectLeftRemote = document.getElementById('select-left-remote');
 const inputLocalPath = document.getElementById('input-local-path');
 const btnLocalGo = document.getElementById('btn-local-go');
 const btnLocalUp = document.getElementById('btn-local-up');
@@ -22,6 +31,7 @@ const chkLocalAll = document.getElementById('chk-local-all');
 const footerLocalInfo = document.getElementById('footer-local-info');
 const footerLocalSelected = document.getElementById('footer-local-selected');
 
+const selectRightMode = document.getElementById('select-right-mode');
 const selectCloudRemote = document.getElementById('select-cloud-remote');
 const inputCloudPath = document.getElementById('input-cloud-path');
 const btnCloudGo = document.getElementById('btn-cloud-go');
@@ -83,7 +93,7 @@ function formatDate(dateStr) {
   return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-//// WebSocket Connection
+// WebSocket Connection
 function initSocket() {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   ws = new WebSocket(`${protocol}//${window.location.host}`);
@@ -255,8 +265,8 @@ function updateProgressUI(running, stats, success, error, queueCount) {
       progressBarFill.style.width = '100%';
       setTimeout(() => {
         progressBox.classList.add('hidden');
-        loadLocalDirectory(localCurrentPath);
-        loadCloudDirectory(cloudRemote, cloudCurrentPath);
+        loadLeftPane(leftPane.path);
+        loadRightPane(rightPane.remote, rightPane.path);
       }, 1500);
     } else if (error) {
       progressLog.innerText = `Error: ${error}`;
@@ -265,34 +275,45 @@ function updateProgressUI(running, stats, success, error, queueCount) {
   }
 }
 
-// Populate Cloud Remotes Dropdown
+// Populate Cloud Remotes Dropdowns
 async function loadRemotes() {
   try {
     const res = await fetch('/api/drives');
     const drives = await safeFetchJson(res);
-    selectCloudRemote.innerHTML = '';
     
-    // Add combined first if exists
-    const hasUnion = drives.some(d => d.name === 'combined');
-    if (hasUnion) {
-      const opt = document.createElement('option');
-      opt.value = 'combined';
-      opt.innerText = '📁 Unidad Fusionada (combined)';
-      selectCloudRemote.appendChild(opt);
-    }
-    
-    drives.forEach(d => {
-      if (d.name !== 'combined') {
+    [selectLeftRemote, selectCloudRemote].forEach(selectEl => {
+      if (!selectEl) return;
+      selectEl.innerHTML = '';
+      
+      const hasUnion = drives.some(d => d.name === 'combined');
+      if (hasUnion) {
         const opt = document.createElement('option');
-        opt.value = d.name;
-        opt.innerText = `☁️ ${d.name} (${d.type})`;
-        selectCloudRemote.appendChild(opt);
+        opt.value = 'combined';
+        opt.innerText = '📁 Unidad Fusionada (combined)';
+        selectEl.appendChild(opt);
       }
+      
+      drives.forEach(d => {
+        if (d.name !== 'combined') {
+          const opt = document.createElement('option');
+          opt.value = d.name;
+          opt.innerText = `☁️ ${d.name} (${d.type})`;
+          selectEl.appendChild(opt);
+        }
+      });
     });
 
     if (selectCloudRemote.options.length > 0) {
-      cloudRemote = selectCloudRemote.value;
-      loadCloudDirectory(cloudRemote, '');
+      rightPane.remote = selectCloudRemote.value;
+      if (rightPane.mode === 'cloud') {
+        loadRightPane(rightPane.remote, '');
+      }
+    }
+    if (selectLeftRemote && selectLeftRemote.options.length > 0) {
+      leftPane.remote = selectLeftRemote.value;
+      if (leftPane.mode === 'cloud') {
+        loadLeftPane('');
+      }
     }
   } catch (e) {
     console.error('Error loading remotes:', e);
@@ -300,29 +321,46 @@ async function loadRemotes() {
 }
 
 // -------------------------------------------------------------
-// LOCAL SYSTEM PANE LOGIC
+// LEFT PANE LOGIC
 // -------------------------------------------------------------
-async function loadLocalDirectory(reqPath) {
+async function loadLeftPane(reqPath) {
   tbodyLocal.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--text-muted); padding: 20px;">Cargando...</td></tr>';
-  selectedLocalPaths.clear();
+  leftPane.selected.clear();
   chkLocalAll.checked = false;
-  updateLocalSelectedCount();
+  updateLeftSelectedCount();
 
-  try {
-    const res = await fetch(`/api/fs/local/ls?path=${encodeURIComponent(reqPath)}`);
-    const data = await safeFetchJson(res);
+  if (leftPane.mode === 'local') {
+    try {
+      const res = await fetch(`/api/fs/local/ls?path=${encodeURIComponent(reqPath || 'drives')}`);
+      const data = await safeFetchJson(res);
 
-    localCurrentPath = data.isDrivesRoot ? 'drives' : data.currentPath;
-    inputLocalPath.value = data.isDrivesRoot ? 'Discos de este Equipo' : data.currentPath;
-    localItems = data.items || [];
+      leftPane.path = data.isDrivesRoot ? 'drives' : data.currentPath;
+      inputLocalPath.value = data.isDrivesRoot ? 'Discos de este Equipo' : data.currentPath;
+      leftPane.items = data.items || [];
 
-    renderLocalTable(data.items, data.isDrivesRoot);
-  } catch (err) {
-    tbodyLocal.innerHTML = `<tr><td colspan="4" style="color: #ff4d4d; padding: 20px; text-align: center;">${err.message}</td></tr>`;
+      renderLeftTable(data.items, data.isDrivesRoot);
+    } catch (err) {
+      tbodyLocal.innerHTML = `<tr><td colspan="4" style="color: #ff4d4d; padding: 20px; text-align: center;">${err.message}</td></tr>`;
+    }
+  } else {
+    try {
+      const targetRemote = leftPane.remote || 'combined';
+      const res = await fetch(`/api/fs/cloud/ls?remote=${encodeURIComponent(targetRemote)}&path=${encodeURIComponent(reqPath || '')}`);
+      const data = await safeFetchJson(res);
+
+      leftPane.remote = data.remote;
+      leftPane.path = data.currentPath || '';
+      inputLocalPath.value = leftPane.path ? `/${leftPane.path}` : '/ (Raíz)';
+      leftPane.items = data.items || [];
+
+      renderLeftTable(data.items, false);
+    } catch (err) {
+      tbodyLocal.innerHTML = `<tr><td colspan="4" style="color: #ff4d4d; padding: 20px; text-align: center;">${err.message}</td></tr>`;
+    }
   }
 }
 
-function renderLocalTable(items, isDrivesRoot) {
+function renderLeftTable(items, isDrivesRoot) {
   tbodyLocal.innerHTML = '';
   if (!items || items.length === 0) {
     tbodyLocal.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--text-muted); padding: 20px;">Carpeta vacía</td></tr>';
@@ -334,7 +372,7 @@ function renderLocalTable(items, isDrivesRoot) {
 
   items.forEach(item => {
     const tr = document.createElement('tr');
-    const isChecked = selectedLocalPaths.has(item.path);
+    const isChecked = leftPane.selected.has(item.path);
     if (isChecked) tr.classList.add('selected');
 
     const icon = item.isDrive ? '💽' : (item.isDir ? '📁' : '📄');
@@ -352,23 +390,22 @@ function renderLocalTable(items, isDrivesRoot) {
       <td>${item.isDrive ? 'Dispositivo' : formatDate(item.modTime)}</td>
     `;
 
-    // Row selection and navigation events
     const chk = tr.querySelector('.chk-local-item');
     chk.addEventListener('change', (e) => {
       e.stopPropagation();
-      toggleLocalSelect(item.path, chk.checked, tr);
+      toggleLeftSelect(item.path, chk.checked, tr);
     });
 
     tr.addEventListener('click', (e) => {
       if (e.target.tagName === 'INPUT') return;
-      const nextState = !selectedLocalPaths.has(item.path);
+      const nextState = !leftPane.selected.has(item.path);
       chk.checked = nextState;
-      toggleLocalSelect(item.path, nextState, tr);
+      toggleLeftSelect(item.path, nextState, tr);
     });
 
     tr.addEventListener('dblclick', () => {
       if (item.isDir || item.isDrive) {
-        loadLocalDirectory(item.path);
+        loadLeftPane(item.path);
       }
     });
 
@@ -376,46 +413,62 @@ function renderLocalTable(items, isDrivesRoot) {
   });
 }
 
-function toggleLocalSelect(itemPath, select, tr) {
+function toggleLeftSelect(itemPath, select, tr) {
   if (select) {
-    selectedLocalPaths.add(itemPath);
+    leftPane.selected.add(itemPath);
     tr.classList.add('selected');
   } else {
-    selectedLocalPaths.delete(itemPath);
+    leftPane.selected.delete(itemPath);
     tr.classList.remove('selected');
   }
-  updateLocalSelectedCount();
+  updateLeftSelectedCount();
 }
 
-function updateLocalSelectedCount() {
-  footerLocalSelected.innerText = `${selectedLocalPaths.size} seleccionados`;
+function updateLeftSelectedCount() {
+  footerLocalSelected.innerText = `${leftPane.selected.size} seleccionados`;
 }
 
 // -------------------------------------------------------------
-// CLOUD STORAGE PANE LOGIC
+// RIGHT PANE LOGIC
 // -------------------------------------------------------------
-async function loadCloudDirectory(remote, reqPath) {
-  tbodyCloud.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--text-muted); padding: 20px;">Cargando nube...</td></tr>';
-  selectedCloudPaths.clear();
+async function loadRightPane(remote, reqPath) {
+  tbodyCloud.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--text-muted); padding: 20px;">Cargando...</td></tr>';
+  rightPane.selected.clear();
   chkCloudAll.checked = false;
-  updateCloudSelectedCount();
+  updateRightSelectedCount();
 
-  try {
-    const res = await fetch(`/api/fs/cloud/ls?remote=${encodeURIComponent(remote)}&path=${encodeURIComponent(reqPath)}`);
-    const data = await safeFetchJson(res);
+  if (rightPane.mode === 'cloud') {
+    try {
+      const targetRemote = remote || rightPane.remote || 'combined';
+      const res = await fetch(`/api/fs/cloud/ls?remote=${encodeURIComponent(targetRemote)}&path=${encodeURIComponent(reqPath || '')}`);
+      const data = await safeFetchJson(res);
 
-    cloudRemote = data.remote;
-    cloudCurrentPath = data.currentPath || '';
-    inputCloudPath.value = cloudCurrentPath ? `/${cloudCurrentPath}` : '/ (Raíz)';
-    cloudItems = data.items || [];
+      rightPane.remote = data.remote;
+      rightPane.path = data.currentPath || '';
+      inputCloudPath.value = rightPane.path ? `/${rightPane.path}` : '/ (Raíz)';
+      rightPane.items = data.items || [];
 
-    renderCloudTable(data.items);
-  } catch (err) {
-    tbodyCloud.innerHTML = `<tr><td colspan="4" style="color: #ff4d4d; padding: 20px; text-align: center;">${err.message}</td></tr>`;
+      renderRightTable(data.items, false);
+    } catch (err) {
+      tbodyCloud.innerHTML = `<tr><td colspan="4" style="color: #ff4d4d; padding: 20px; text-align: center;">${err.message}</td></tr>`;
+    }
+  } else {
+    try {
+      const res = await fetch(`/api/fs/local/ls?path=${encodeURIComponent(reqPath || 'drives')}`);
+      const data = await safeFetchJson(res);
+
+      rightPane.path = data.isDrivesRoot ? 'drives' : data.currentPath;
+      inputCloudPath.value = data.isDrivesRoot ? 'Discos de este Equipo' : data.currentPath;
+      rightPane.items = data.items || [];
+
+      renderRightTable(data.items, data.isDrivesRoot);
+    } catch (err) {
+      tbodyCloud.innerHTML = `<tr><td colspan="4" style="color: #ff4d4d; padding: 20px; text-align: center;">${err.message}</td></tr>`;
+    }
   }
 }
 
-function renderCloudTable(items) {
+function renderRightTable(items, isDrivesRoot) {
   tbodyCloud.innerHTML = '';
   if (!items || items.length === 0) {
     tbodyCloud.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--text-muted); padding: 20px;">Carpeta vacía</td></tr>';
@@ -427,11 +480,11 @@ function renderCloudTable(items) {
 
   items.forEach(item => {
     const tr = document.createElement('tr');
-    const isChecked = selectedCloudPaths.has(item.path);
+    const isChecked = rightPane.selected.has(item.path);
     if (isChecked) tr.classList.add('selected');
 
-    const icon = item.isDir ? '📁' : '📄';
-    const sizeStr = item.isDir ? '-' : formatBytes(item.size);
+    const icon = item.isDrive ? '💽' : (item.isDir ? '📁' : '📄');
+    const sizeStr = item.isDrive ? `${formatBytes(item.free)} libres` : (item.isDir ? '-' : formatBytes(item.size));
 
     tr.innerHTML = `
       <td><input type="checkbox" class="chk-cloud-item" data-path="${item.path}" ${isChecked ? 'checked' : ''}></td>
@@ -442,25 +495,25 @@ function renderCloudTable(items) {
         </div>
       </td>
       <td>${sizeStr}</td>
-      <td>${formatDate(item.modTime)}</td>
+      <td>${item.isDrive ? 'Dispositivo' : formatDate(item.modTime)}</td>
     `;
 
     const chk = tr.querySelector('.chk-cloud-item');
     chk.addEventListener('change', (e) => {
       e.stopPropagation();
-      toggleCloudSelect(item.path, chk.checked, tr);
+      toggleRightSelect(item.path, chk.checked, tr);
     });
 
     tr.addEventListener('click', (e) => {
       if (e.target.tagName === 'INPUT') return;
-      const nextState = !selectedCloudPaths.has(item.path);
+      const nextState = !rightPane.selected.has(item.path);
       chk.checked = nextState;
-      toggleCloudSelect(item.path, nextState, tr);
+      toggleRightSelect(item.path, nextState, tr);
     });
 
     tr.addEventListener('dblclick', () => {
-      if (item.isDir) {
-        loadCloudDirectory(cloudRemote, item.path);
+      if (item.isDir || item.isDrive) {
+        loadRightPane(rightPane.remote, item.path);
       }
     });
 
@@ -468,113 +521,177 @@ function renderCloudTable(items) {
   });
 }
 
-function toggleCloudSelect(itemPath, select, tr) {
+function toggleRightSelect(itemPath, select, tr) {
   if (select) {
-    selectedCloudPaths.add(itemPath);
+    rightPane.selected.add(itemPath);
     tr.classList.add('selected');
   } else {
-    selectedCloudPaths.delete(itemPath);
+    rightPane.selected.delete(itemPath);
     tr.classList.remove('selected');
   }
-  updateCloudSelectedCount();
+  updateRightSelectedCount();
 }
 
-function updateCloudSelectedCount() {
-  footerCloudSelected.innerText = `${selectedCloudPaths.size} seleccionados`;
+function updateRightSelectedCount() {
+  footerCloudSelected.innerText = `${rightPane.selected.size} seleccionados`;
 }
 
 // -------------------------------------------------------------
 // EVENT BINDINGS & ACTIONS
 // -------------------------------------------------------------
 
-// Navigation local
-btnLocalGo.addEventListener('click', () => loadLocalDirectory(inputLocalPath.value));
-btnLocalHome.addEventListener('click', () => loadLocalDirectory('drives'));
+// Mode Selectors Change Handlers
+if (selectLeftMode) {
+  selectLeftMode.addEventListener('change', () => {
+    leftPane.mode = selectLeftMode.value;
+    if (leftPane.mode === 'cloud') {
+      selectLeftRemote.classList.remove('hidden');
+      leftPane.remote = selectLeftRemote.value || 'combined';
+      leftPane.path = '';
+      loadLeftPane('');
+    } else {
+      selectLeftRemote.classList.add('hidden');
+      leftPane.path = 'drives';
+      loadLeftPane('drives');
+    }
+  });
+}
+
+if (selectLeftRemote) {
+  selectLeftRemote.addEventListener('change', () => {
+    leftPane.remote = selectLeftRemote.value;
+    loadLeftPane('');
+  });
+}
+
+if (selectRightMode) {
+  selectRightMode.addEventListener('change', () => {
+    rightPane.mode = selectRightMode.value;
+    if (rightPane.mode === 'cloud') {
+      selectCloudRemote.classList.remove('hidden');
+      rightPane.remote = selectCloudRemote.value || 'combined';
+      rightPane.path = '';
+      loadRightPane(rightPane.remote, '');
+    } else {
+      selectCloudRemote.classList.add('hidden');
+      rightPane.path = 'drives';
+      loadRightPane('', 'drives');
+    }
+  });
+}
+
+if (selectCloudRemote) {
+  selectCloudRemote.addEventListener('change', () => {
+    rightPane.remote = selectCloudRemote.value;
+    loadRightPane(rightPane.remote, '');
+  });
+}
+
+// Navigation Left Pane
+btnLocalGo.addEventListener('click', () => {
+  let val = inputLocalPath.value.trim();
+  if (leftPane.mode === 'cloud') val = val.replace(/^\/+/, '');
+  loadLeftPane(val);
+});
+btnLocalHome.addEventListener('click', () => loadLeftPane(leftPane.mode === 'local' ? 'drives' : ''));
 btnLocalUp.addEventListener('click', () => {
-  if (localCurrentPath === 'drives') return;
-  const parent = localCurrentPath.lastIndexOf('\\') > 2 ? localCurrentPath.substring(0, localCurrentPath.lastIndexOf('\\')) : (localCurrentPath.endsWith(':\\') ? 'drives' : `${localCurrentPath.substring(0, 2)}\\`);
-  loadLocalDirectory(parent);
+  if (leftPane.mode === 'local') {
+    if (leftPane.path === 'drives') return;
+    const parent = leftPane.path.lastIndexOf('\\') > 2 ? leftPane.path.substring(0, leftPane.path.lastIndexOf('\\')) : (leftPane.path.endsWith(':\\') ? 'drives' : `${leftPane.path.substring(0, 2)}\\`);
+    loadLeftPane(parent);
+  } else {
+    if (!leftPane.path) return;
+    const parent = leftPane.path.includes('/') ? leftPane.path.substring(0, leftPane.path.lastIndexOf('/')) : '';
+    loadLeftPane(parent);
+  }
+});
+
+// Navigation Right Pane
+btnCloudGo.addEventListener('click', () => {
+  let val = inputCloudPath.value.trim();
+  if (rightPane.mode === 'cloud') val = val.replace(/^\/+/, '');
+  loadRightPane(rightPane.remote, val);
+});
+btnCloudHome.addEventListener('click', () => loadRightPane(rightPane.remote, rightPane.mode === 'local' ? 'drives' : ''));
+btnCloudUp.addEventListener('click', () => {
+  if (rightPane.mode === 'cloud') {
+    if (!rightPane.path) return;
+    const parent = rightPane.path.includes('/') ? rightPane.path.substring(0, rightPane.path.lastIndexOf('/')) : '';
+    loadRightPane(rightPane.remote, parent);
+  } else {
+    if (rightPane.path === 'drives') return;
+    const parent = rightPane.path.lastIndexOf('\\') > 2 ? rightPane.path.substring(0, rightPane.path.lastIndexOf('\\')) : (rightPane.path.endsWith(':\\') ? 'drives' : `${rightPane.path.substring(0, 2)}\\`);
+    loadRightPane(rightPane.remote, parent);
+  }
 });
 
 // Select All Checkboxes
 chkLocalAll.addEventListener('change', () => {
   const check = chkLocalAll.checked;
-  selectedLocalPaths.clear();
+  leftPane.selected.clear();
   document.querySelectorAll('#tbody-local tr').forEach(tr => {
     const chk = tr.querySelector('.chk-local-item');
     if (chk) {
       chk.checked = check;
       const itemPath = chk.getAttribute('data-path');
       if (check) {
-        selectedLocalPaths.add(itemPath);
+        leftPane.selected.add(itemPath);
         tr.classList.add('selected');
       } else {
         tr.classList.remove('selected');
       }
     }
   });
-  updateLocalSelectedCount();
+  updateLeftSelectedCount();
 });
 
 chkCloudAll.addEventListener('change', () => {
   const check = chkCloudAll.checked;
-  selectedCloudPaths.clear();
+  rightPane.selected.clear();
   document.querySelectorAll('#tbody-cloud tr').forEach(tr => {
     const chk = tr.querySelector('.chk-cloud-item');
     if (chk) {
       chk.checked = check;
       const itemPath = chk.getAttribute('data-path');
       if (check) {
-        selectedCloudPaths.add(itemPath);
+        rightPane.selected.add(itemPath);
         tr.classList.add('selected');
       } else {
         tr.classList.remove('selected');
       }
     }
   });
-  updateCloudSelectedCount();
-});
-
-// Navigation cloud
-selectCloudRemote.addEventListener('change', () => {
-  cloudRemote = selectCloudRemote.value;
-  loadCloudDirectory(cloudRemote, '');
-});
-
-btnCloudGo.addEventListener('click', () => {
-  let val = inputCloudPath.value.trim().replace(/^\/+/, '');
-  loadCloudDirectory(cloudRemote, val);
-});
-btnCloudHome.addEventListener('click', () => loadCloudDirectory(cloudRemote, ''));
-btnCloudUp.addEventListener('click', () => {
-  if (!cloudCurrentPath) return;
-  const parent = cloudCurrentPath.includes('/') ? cloudCurrentPath.substring(0, cloudCurrentPath.lastIndexOf('/')) : '';
-  loadCloudDirectory(cloudRemote, parent);
+  updateRightSelectedCount();
 });
 
 // Global Refresh
 btnGlobalRefresh.addEventListener('click', () => {
-  loadLocalDirectory(localCurrentPath);
-  loadCloudDirectory(cloudRemote, cloudCurrentPath);
+  loadLeftPane(leftPane.path);
+  loadRightPane(rightPane.remote, rightPane.path);
 });
 
 // Mkdir Handlers
 btnLocalMkdir.addEventListener('click', async () => {
-  if (localCurrentPath === 'drives') {
+  if (leftPane.mode === 'local' && leftPane.path === 'drives') {
     alert('Navega dentro de un disco local para crear una carpeta.');
     return;
   }
-  const name = prompt('Ingresa el nombre de la nueva carpeta local:');
+  const name = prompt('Ingresa el nombre de la nueva carpeta:');
   if (!name) return;
 
   try {
     const res = await fetch('/api/fs/operation', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'mkdir', dstType: 'local', dstPath: localCurrentPath, newDirName: name })
+      body: JSON.stringify({
+        action: 'mkdir',
+        dstType: leftPane.mode === 'local' ? 'local' : leftPane.remote,
+        dstPath: leftPane.path,
+        newDirName: name
+      })
     });
     if (res.ok) {
-      loadLocalDirectory(localCurrentPath);
+      loadLeftPane(leftPane.path);
     } else {
       const data = await res.json();
       alert(`Error al crear carpeta: ${data.error}`);
@@ -585,17 +702,26 @@ btnLocalMkdir.addEventListener('click', async () => {
 });
 
 btnCloudMkdir.addEventListener('click', async () => {
-  const name = prompt('Ingresa el nombre de la nueva carpeta en la nube:');
+  if (rightPane.mode === 'local' && rightPane.path === 'drives') {
+    alert('Navega dentro de un disco local para crear una carpeta.');
+    return;
+  }
+  const name = prompt('Ingresa el nombre de la nueva carpeta:');
   if (!name) return;
 
   try {
     const res = await fetch('/api/fs/operation', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'mkdir', dstType: cloudRemote, dstPath: cloudCurrentPath, newDirName: name })
+      body: JSON.stringify({
+        action: 'mkdir',
+        dstType: rightPane.mode === 'local' ? 'local' : rightPane.remote,
+        dstPath: rightPane.path,
+        newDirName: name
+      })
     });
     if (res.ok) {
-      loadCloudDirectory(cloudRemote, cloudCurrentPath);
+      loadRightPane(rightPane.remote, rightPane.path);
     } else {
       const data = await res.json();
       alert(`Error al crear carpeta: ${data.error}`);
@@ -627,120 +753,130 @@ async function executeOperation(payload) {
   }
 }
 
-// Copy Local -> Cloud
+// Copy Left -> Right
 btnCopyCloud.addEventListener('click', () => {
-  if (selectedLocalPaths.size === 0) {
-    alert('Selecciona al menos un archivo o carpeta en la columna izquierda (PC).');
+  if (leftPane.selected.size === 0) {
+    alert('Selecciona al menos un archivo o carpeta en el panel izquierdo.');
     return;
   }
-  const selectedItems = localItems.filter(i => selectedLocalPaths.has(i.path));
+  if (rightPane.mode === 'local' && rightPane.path === 'drives') {
+    alert('Selecciona una carpeta o disco destino válido en el panel derecho.');
+    return;
+  }
+  const selectedItems = leftPane.items.filter(i => leftPane.selected.has(i.path));
   executeOperation({
     action: 'copy',
-    srcType: 'local',
-    srcPath: localCurrentPath,
-    dstType: cloudRemote,
-    dstPath: cloudCurrentPath,
+    srcType: leftPane.mode === 'local' ? 'local' : leftPane.remote,
+    srcPath: leftPane.path,
+    dstType: rightPane.mode === 'local' ? 'local' : rightPane.remote,
+    dstPath: rightPane.path,
     items: selectedItems
   });
 });
 
-// Copy Cloud -> Local
+// Copy Right -> Left
 btnCopyLocal.addEventListener('click', () => {
-  if (selectedCloudPaths.size === 0) {
-    alert('Selecciona al menos un archivo o carpeta en la columna derecha (Nube).');
+  if (rightPane.selected.size === 0) {
+    alert('Selecciona al menos un archivo o carpeta en el panel derecho.');
     return;
   }
-  if (localCurrentPath === 'drives') {
-    alert('Selecciona una carpeta o disco destino válido en la columna izquierda.');
+  if (leftPane.mode === 'local' && leftPane.path === 'drives') {
+    alert('Selecciona una carpeta o disco destino válido en el panel izquierdo.');
     return;
   }
-  const selectedItems = cloudItems.filter(i => selectedCloudPaths.has(i.path));
+  const selectedItems = rightPane.items.filter(i => rightPane.selected.has(i.path));
   executeOperation({
     action: 'copy',
-    srcType: cloudRemote,
-    srcPath: cloudCurrentPath,
-    dstType: 'local',
-    dstPath: localCurrentPath,
+    srcType: rightPane.mode === 'local' ? 'local' : rightPane.remote,
+    srcPath: rightPane.path,
+    dstType: leftPane.mode === 'local' ? 'local' : leftPane.remote,
+    dstPath: leftPane.path,
     items: selectedItems
   });
 });
 
-// Move Local -> Cloud
+// Move Left -> Right
 btnMoveCloud.addEventListener('click', () => {
-  if (selectedLocalPaths.size === 0) {
-    alert('Selecciona al menos un archivo o carpeta en la columna izquierda (PC).');
+  if (leftPane.selected.size === 0) {
+    alert('Selecciona al menos un archivo o carpeta en el panel izquierdo.');
     return;
   }
-  if (!confirm('¿Estás seguro de MOVER los elementos seleccionados del PC a la Nube? (Se borrarán del PC origen al completar).')) return;
-  const selectedItems = localItems.filter(i => selectedLocalPaths.has(i.path));
+  if (rightPane.mode === 'local' && rightPane.path === 'drives') {
+    alert('Selecciona una carpeta o disco destino válido en el panel derecho.');
+    return;
+  }
+  if (!confirm('¿Estás seguro de MOVER los elementos seleccionados del panel izquierdo al derecho? (Se borrarán del origen al completar).')) return;
+  const selectedItems = leftPane.items.filter(i => leftPane.selected.has(i.path));
   executeOperation({
     action: 'move',
-    srcType: 'local',
-    srcPath: localCurrentPath,
-    dstType: cloudRemote,
-    dstPath: cloudCurrentPath,
+    srcType: leftPane.mode === 'local' ? 'local' : leftPane.remote,
+    srcPath: leftPane.path,
+    dstType: rightPane.mode === 'local' ? 'local' : rightPane.remote,
+    dstPath: rightPane.path,
     items: selectedItems
   });
 });
 
-// Move Cloud -> Local
+// Move Right -> Left
 btnMoveLocal.addEventListener('click', () => {
-  if (selectedCloudPaths.size === 0) {
-    alert('Selecciona al menos un archivo o carpeta en la columna derecha (Nube).');
+  if (rightPane.selected.size === 0) {
+    alert('Selecciona al menos un archivo o carpeta en el panel derecho.');
     return;
   }
-  if (localCurrentPath === 'drives') {
-    alert('Selecciona una carpeta o disco destino válido en la columna izquierda.');
+  if (leftPane.mode === 'local' && leftPane.path === 'drives') {
+    alert('Selecciona una carpeta o disco destino válido en el panel izquierdo.');
     return;
   }
-  if (!confirm('¿Estás seguro de MOVER los elementos seleccionados de la Nube al PC? (Se borrarán de la Nube origen al completar).')) return;
-  const selectedItems = cloudItems.filter(i => selectedCloudPaths.has(i.path));
+  if (!confirm('¿Estás seguro de MOVER los elementos seleccionados del panel derecho al izquierdo? (Se borrarán del origen al completar).')) return;
+  const selectedItems = rightPane.items.filter(i => rightPane.selected.has(i.path));
   executeOperation({
     action: 'move',
-    srcType: cloudRemote,
-    srcPath: cloudCurrentPath,
-    dstType: 'local',
-    dstPath: localCurrentPath,
+    srcType: rightPane.mode === 'local' ? 'local' : rightPane.remote,
+    srcPath: rightPane.path,
+    dstType: leftPane.mode === 'local' ? 'local' : leftPane.remote,
+    dstPath: leftPane.path,
     items: selectedItems
   });
 });
 
-// Sync Local -> Cloud
+// Sync Left -> Right
 btnSync.addEventListener('click', () => {
-  if (localCurrentPath === 'drives') {
-    alert('Selecciona una carpeta local válida en la columna izquierda para sincronizar.');
+  if (leftPane.mode === 'local' && leftPane.path === 'drives') {
+    alert('Selecciona una carpeta válida en el panel izquierdo para sincronizar.');
     return;
   }
-  const targetCloudName = cloudCurrentPath ? `${cloudRemote}:/${cloudCurrentPath}` : `${cloudRemote}: (Raíz)`;
-  if (!confirm(`ADVERTENCIA DE SINCRONIZACIÓN:\n\nEsto hará que el destino (${targetCloudName}) sea EXACTAMENTE IDÉNTICO al origen local (${localCurrentPath}).\n\n¡Cualquier archivo en el destino que no exista en el origen será ELIMINADO del destino!\n\n¿Deseas continuar?`)) return;
+  const leftName = leftPane.mode === 'local' ? leftPane.path : `${leftPane.remote}:${leftPane.path}`;
+  const rightName = rightPane.mode === 'local' ? rightPane.path : `${rightPane.remote}:${rightPane.path}`;
+
+  if (!confirm(`ADVERTENCIA DE SINCRONIZACIÓN:\n\nEsto hará que el destino (${rightName}) sea EXACTAMENTE IDÉNTICO al origen (${leftName}).\n\n¡Cualquier archivo en el destino que no exista en el origen será ELIMINADO del destino!\n\n¿Deseas continuar?`)) return;
 
   executeOperation({
     action: 'sync',
-    srcType: 'local',
-    srcPath: localCurrentPath,
-    dstType: cloudRemote,
-    dstPath: cloudCurrentPath
+    srcType: leftPane.mode === 'local' ? 'local' : leftPane.remote,
+    srcPath: leftPane.path,
+    dstType: rightPane.mode === 'local' ? 'local' : rightPane.remote,
+    dstPath: rightPane.path
   });
 });
 
 // Delete Selected
 btnDelete.addEventListener('click', () => {
-  const selectedLocals = localItems.filter(i => selectedLocalPaths.has(i.path));
-  const selectedClouds = cloudItems.filter(i => selectedCloudPaths.has(i.path));
+  const selectedLefts = leftPane.items.filter(i => leftPane.selected.has(i.path));
+  const selectedRights = rightPane.items.filter(i => rightPane.selected.has(i.path));
 
-  if (selectedLocals.length === 0 && selectedClouds.length === 0) {
+  if (selectedLefts.length === 0 && selectedRights.length === 0) {
     alert('Selecciona al menos un elemento en la columna izquierda o derecha para eliminar.');
     return;
   }
 
-  const totalCount = selectedLocals.length + selectedClouds.length;
+  const totalCount = selectedLefts.length + selectedRights.length;
   if (!confirm(`¿Estás seguro de eliminar permanentemente ${totalCount} elementos seleccionados?`)) return;
 
-  if (selectedLocals.length > 0) {
-    executeOperation({ action: 'delete', srcType: 'local', items: selectedLocals });
+  if (selectedLefts.length > 0) {
+    executeOperation({ action: 'delete', srcType: leftPane.mode === 'local' ? 'local' : leftPane.remote, items: selectedLefts });
   }
-  if (selectedClouds.length > 0) {
-    executeOperation({ action: 'delete', srcType: cloudRemote, items: selectedClouds });
+  if (selectedRights.length > 0) {
+    executeOperation({ action: 'delete', srcType: rightPane.mode === 'local' ? 'local' : rightPane.remote, items: selectedRights });
   }
 });
 
@@ -766,4 +902,4 @@ if (btnCancelExplorerOp) {
 // App Startup
 initSocket();
 loadRemotes();
-loadLocalDirectory('C:\\');
+loadLeftPane('C:\\');

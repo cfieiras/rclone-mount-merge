@@ -233,19 +233,24 @@
 
     <!-- Dual Pane Area -->
     <div class="dual-pane-wrapper">
-      <!-- Left Pane: Local System -->
+      <!-- Left Pane -->
       <section class="pane-card" id="pane-local">
         <div class="pane-header">
-          <div class="pane-title">
-            <span>💻</span>
-            <span>Sistema Local (PC)</span>
+          <div class="pane-title" style="display: flex; align-items: center; gap: 6px;">
+            <select id="select-left-mode" class="path-input" style="width: auto; font-weight: 600; padding: 4px 8px; font-size: 13px;">
+              <option value="local">💻 PC Local</option>
+              <option value="cloud">☁️ Nube / Remote</option>
+            </select>
+            <select id="select-left-remote" class="path-input hidden" style="width: auto; font-weight: bold; color: var(--primary-color); padding: 4px 8px; font-size: 13px;">
+              <!-- Remotes populated dynamically -->
+            </select>
           </div>
           <button class="btn-nav" id="btn-local-mkdir">📁 Nueva Carpeta</button>
         </div>
 
         <div class="path-nav-bar">
           <button class="btn-nav" id="btn-local-up" title="Carpeta superior">⬆️</button>
-          <button class="btn-nav" id="btn-local-home" title="Ver Discos">🏠</button>
+          <button class="btn-nav" id="btn-local-home" title="Ver Discos o Raíz">🏠</button>
           <input type="text" id="input-local-path" class="path-input" placeholder="C:\Ruta\Local">
           <button class="btn-nav" id="btn-local-go">Ir</button>
         </div>
@@ -274,21 +279,21 @@
 
       <!-- Center Action Toolbar -->
       <div class="center-actions-bar">
-        <button id="btn-action-copy-to-cloud" class="btn btn-accent btn-action-tool" title="Copiar seleccionados del PC a la Nube">
+        <button id="btn-action-copy-to-cloud" class="btn btn-accent btn-action-tool" title="Copiar seleccionados del panel izquierdo al derecho">
           Copiar ➡️
         </button>
-        <button id="btn-action-copy-to-local" class="btn btn-accent btn-action-tool" title="Copiar seleccionados de la Nube al PC">
+        <button id="btn-action-copy-to-local" class="btn btn-accent btn-action-tool" title="Copiar seleccionados del panel derecho al izquierdo">
           ⬅️ Copiar
         </button>
         <div style="height: 10px;"></div>
-        <button id="btn-action-move-to-cloud" class="btn btn-primary btn-action-tool" title="Mover seleccionados del PC a la Nube">
+        <button id="btn-action-move-to-cloud" class="btn btn-primary btn-action-tool" title="Mover seleccionados del panel izquierdo al derecho">
           Mover ➡️
         </button>
-        <button id="btn-action-move-to-local" class="btn btn-primary btn-action-tool" title="Mover seleccionados de la Nube al PC">
+        <button id="btn-action-move-to-local" class="btn btn-primary btn-action-tool" title="Mover seleccionados del panel derecho al izquierdo">
           ⬅️ Mover
         </button>
         <div style="height: 10px;"></div>
-        <button id="btn-action-sync" class="btn btn-action-tool" style="background: linear-gradient(135deg, #f39c12, #e67e22); color: #fff;" title="Sincronizar carpeta izquierda con carpeta derecha">
+        <button id="btn-action-sync" class="btn btn-action-tool" style="background: linear-gradient(135deg, #f39c12, #e67e22); color: #fff;" title="Sincronizar panel izquierdo con panel derecho">
           🔄 Sync
         </button>
         <button id="btn-action-delete" class="btn btn-danger btn-action-tool" title="Eliminar elementos seleccionados">
@@ -296,13 +301,15 @@
         </button>
       </div>
 
-      <!-- Right Pane: Cloud Remotes -->
+      <!-- Right Pane -->
       <section class="pane-card" id="pane-cloud">
         <div class="pane-header">
-          <div class="pane-title">
-            <span>☁️</span>
-            <span>Nube:</span>
-            <select id="select-cloud-remote" class="path-input" style="width: auto; font-weight: bold; color: var(--primary-color);">
+          <div class="pane-title" style="display: flex; align-items: center; gap: 6px;">
+            <select id="select-right-mode" class="path-input" style="width: auto; font-weight: 600; padding: 4px 8px; font-size: 13px;">
+              <option value="cloud">☁️ Nube / Remote</option>
+              <option value="local">💻 PC Local</option>
+            </select>
+            <select id="select-cloud-remote" class="path-input" style="width: auto; font-weight: bold; color: var(--primary-color); padding: 4px 8px; font-size: 13px;">
               <!-- Remotes populated dynamically -->
             </select>
           </div>
