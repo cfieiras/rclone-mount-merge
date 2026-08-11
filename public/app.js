@@ -893,14 +893,14 @@ btnStartTransfer.addEventListener('click', async () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ mode: activeTransferMode, source, destination, subfolder })
     });
-    const data = await res.json();
+    const data = await safeFetchJson(res);
     if (!res.ok) {
       alert(`Error al iniciar transferencia: ${data.error}`);
       btnStartTransfer.disabled = false;
       btnStartTransfer.innerText = 'Iniciar Transferencia';
     }
   } catch (e) {
-    alert('Error al conectar con el servidor.');
+    alert(e.message);
     btnStartTransfer.disabled = false;
     btnStartTransfer.innerText = 'Iniciar Transferencia';
   }
@@ -914,14 +914,14 @@ btnCancelTransfer.addEventListener('click', async () => {
   btnCancelTransfer.innerText = 'Cancelando...';
   try {
     const res = await fetch('/api/transfer/cancel', { method: 'POST' });
-    const data = await res.json();
+    const data = await safeFetchJson(res);
     if (!res.ok) {
       alert(`Error al cancelar transferencia: ${data.error}`);
       btnCancelTransfer.disabled = false;
       btnCancelTransfer.innerText = 'Cancelar Transferencia';
     }
   } catch (e) {
-    alert('Error al conectar con el servidor.');
+    alert(e.message);
     btnCancelTransfer.disabled = false;
     btnCancelTransfer.innerText = 'Cancelar Transferencia';
   }

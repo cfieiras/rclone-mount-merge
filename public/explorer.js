@@ -476,15 +476,15 @@ async function executeOperation(payload) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
-    const data = await res.json();
+    const data = await safeFetchJson(res);
     if (!res.ok) {
-      alert(`Error iniciando operación: ${data.error}`);
+      alert(`Error en la operación: ${data.error || 'Error desconocido'}`);
     } else if (data.status === 'queued') {
       progressBox.classList.remove('hidden');
       progressLog.innerText = `📌 Tarea agregada a la cola de espera (Puesto #${data.position})`;
     }
   } catch (e) {
-    alert(`Error al conectar con el servidor: ${e.message}`);
+    alert(e.message);
   }
 }
 

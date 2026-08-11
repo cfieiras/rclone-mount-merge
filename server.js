@@ -1109,6 +1109,8 @@ app.post('/api/fs/operation', (req, res) => {
     const result = enqueueOrRunTransferTask({ action, sourceArg, destArg });
     return res.json(result);
   }
+
+  return res.status(400).json({ error: 'Acción no soportada o datos incompletos.' });
 });
 
 // Clean exit process handler
