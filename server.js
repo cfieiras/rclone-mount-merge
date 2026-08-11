@@ -879,16 +879,23 @@ app.post('/api/transfer/start', (req, res) => {
     return res.status(400).json({ error: 'Falta origen o destino.' });
   }
 
+  let folderName = '';
+  try {
+    if (fs.existsSync(source) && fs.statSync(source).isDirectory()) {
+      folderName = path.basename(source);
+    }
+  } catch (e) {}
+
   let destRemote = destination;
   if (subfolder) {
     const cleanSub = subfolder.replace(/^\/+/, '').replace(/\/+$/, '');
     if (cleanSub) {
-      destRemote = `${destination}:${cleanSub}`;
+      destRemote = folderName ? `${destination}:${cleanSub}/${folderName}` : `${destination}:${cleanSub}`;
     } else {
-      destRemote = `${destination}:`;
+      destRemote = folderName ? `${destination}:${folderName}` : `${destination}:`;
     }
   } else {
-    destRemote = `${destination}:`;
+    destRemote = folderName ? `${destination}:${folderName}` : `${destination}:`;
   }
 
   const action = mode === 'sync' ? 'sync' : 'copy';
@@ -1085,27 +1092,44 @@ app.post('/api/fs/operation', (req, res) => {
   }
 
   if (action === 'copy' || action === 'move' || action === 'sync') {
-    if (action !== 'sync' && (!items || items.length === 0)) {
+    if (action === 'sync') {
+      let sourceArg = srcType === 'local' ? srcPath : (srcPath ? `${srcType}:${srcPath}` : `${srcType}:`);
+      let destArg = dstType === 'local' ? dstPath : (dstPath ? `${dstType}:${dstPath}` : `${dstType}:`);
+      const result = enqueueOrRunTransferTask({ action: 'sync', sourceArg, destArg });
+      return res.json(result);
+    }
+
+    if (!items || items.length === 0) {
       return res.status(400).json({ error: 'No se seleccionaron elementos.' });
     }
 
-    let sourceArg = '';
-    let destArg = '';
+    let lastResult = null;
+    items.forEach(item => {
+      let sourceArg = srcType === 'local' ? item.path : `${srcType}:${item.path}`;
+      let destArg = '';
 
-    if (srcType === 'local') {
-      sourceArg = (items && items.length === 1) ? items[0].path : srcPath;
-    } else {
-      sourceArg = (items && items.length === 1) ? `${srcType}:${items[0].path}` : (srcPath ? `${srcType}:${srcPath}` : `${srcType}:`);
-    }
+      if (item.isDir) {
+        if (dstType === 'local') {
+          destArg = dstPath === 'drives' ? `${item.name}:\\` : path.join(dstPath, item.name);
+        } else {
+          destArg = dstPath ? `${dstType}:${dstPath}/${item.name}` : `${dstType}:${item.name}`;
+        }
+      } else {
+        if (dstType === 'local') {
+          destArg = dstPath;
+        } else {
+          destArg = dstPath ? `${dstType}:${dstPath}` : `${dstType}:`;
+        }
+      }
 
-    if (dstType === 'local') {
-      destArg = dstPath;
-    } else {
-      destArg = dstPath ? `${dstType}:${dstPath}` : `${dstType}:`;
-    }
+      lastResult = enqueueOrRunTransferTask({ action, sourceArg, destArg });
+    });
 
-    const result = enqueueOrRunTransferTask({ action, sourceArg, destArg });
-    return res.json(result);
+    return res.json({
+      status: transferQueue.length > 0 ? 'queued' : 'started',
+      message: items.length > 1 ? `${items.length} tareas agregadas a la cola.` : (lastResult ? lastResult.message : 'Operación iniciada.'),
+      position: transferQueue.length
+    });
   }
 
   return res.status(400).json({ error: 'Acción no soportada o datos incompletos.' });
