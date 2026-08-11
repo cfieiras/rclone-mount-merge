@@ -83,7 +83,7 @@ function formatDate(dateStr) {
   return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-// WebSocket Connection
+//// WebSocket Connection
 function initSocket() {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   ws = new WebSocket(`${protocol}//${window.location.host}`);
@@ -93,9 +93,142 @@ function initSocket() {
       const msg = JSON.parse(event.data);
       if (msg.type === 'transfer_status') {
         updateProgressUI(msg.running, msg.stats, msg.success, msg.error, msg.queueCount);
+        renderQueueStack(msg.running, msg.stats, msg.queue, msg.isQueuePaused);
       }
     } catch (e) {}
   };
+}
+
+// Queue Drawer Controller
+let currentQueueList = [];
+let isQueuePausedState = false;
+
+const modalQueueDrawer = document.getElementById('modal-queue-drawer');
+const btnOpenQueueDrawer = document.getElementById('btn-open-queue-drawer');
+const btnCloseQueueDrawer = document.getElementById('btn-close-queue-drawer');
+const btnToggleQueuePause = document.getElementById('btn-toggle-queue-pause');
+const btnClearQueue = document.getElementById('btn-clear-queue');
+const queueStackContainer = document.getElementById('queue-stack-container');
+const queueBadgeCount = document.getElementById('queue-badge-count');
+
+if (btnOpenQueueDrawer) {
+  btnOpenQueueDrawer.addEventListener('click', () => {
+    modalQueueDrawer.classList.remove('hidden');
+  });
+}
+
+if (btnCloseQueueDrawer) {
+  btnCloseQueueDrawer.addEventListener('click', () => {
+    modalQueueDrawer.classList.add('hidden');
+  });
+}
+
+if (btnToggleQueuePause) {
+  btnToggleQueuePause.addEventListener('click', async () => {
+    try {
+      const res = await fetch('/api/transfer/queue/toggle-pause', { method: 'POST' });
+      const data = await safeFetchJson(res);
+      btnToggleQueuePause.innerText = data.isQueuePaused ? '▶️ Reanudar Cola' : '⏸️ Pausar Cola';
+    } catch (e) {
+      alert(e.message);
+    }
+  });
+}
+
+if (btnClearQueue) {
+  btnClearQueue.addEventListener('click', async () => {
+    if (!confirm('¿Estás seguro de vaciar todas las tareas pendientes de la cola?')) return;
+    try {
+      const res = await fetch('/api/transfer/queue/clear', { method: 'POST' });
+      const data = await safeFetchJson(res);
+    } catch (e) {
+      alert(e.message);
+    }
+  });
+}
+
+async function removeTaskFromQueue(id) {
+  try {
+    const res = await fetch('/api/transfer/queue/remove', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id })
+    });
+    await safeFetchJson(res);
+  } catch (e) {
+    alert(e.message);
+  }
+}
+
+function renderQueueStack(running, stats, queue, isQueuePaused) {
+  currentQueueList = queue || [];
+  isQueuePausedState = !!isQueuePaused;
+
+  const totalItems = (running ? 1 : 0) + currentQueueList.length;
+  if (queueBadgeCount) queueBadgeCount.innerText = totalItems;
+  if (btnToggleQueuePause) {
+    btnToggleQueuePause.innerText = isQueuePausedState ? '▶️ Reanudar Cola' : '⏸️ Pausar Cola';
+  }
+
+  if (!queueStackContainer) return;
+
+  if (totalItems === 0) {
+    queueStackContainer.innerHTML = `
+      <div class="empty-state-small">
+        <span style="font-size: 24px;">📋</span>
+        <p style="margin-top: 8px;">No hay tareas activas ni en cola en este momento.</p>
+      </div>
+    `;
+    return;
+  }
+
+  let html = '';
+
+  if (running && stats) {
+    html += `
+      <div class="queue-card-item active-task">
+        <div class="queue-card-header">
+          <span class="queue-badge badge-active">🟢 EN EJECUCIÓN (${stats.mode})</span>
+          <span style="font-size: 13px; font-weight: 700; color: var(--accent-color);">${stats.progress}%</span>
+        </div>
+        <div class="queue-card-paths">
+          <span>${stats.source}</span>
+          <span style="color: var(--accent-color);">➔</span>
+          <span>${stats.destination}</span>
+        </div>
+        <div class="progress-track" style="height: 6px;">
+          <div class="progress-fill" style="width: ${stats.progress}%;"></div>
+        </div>
+        <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted);">
+          <span>${stats.transferred} / ${stats.total} (${stats.speed})</span>
+          <span>ETA: ${stats.eta}</span>
+        </div>
+      </div>
+    `;
+  }
+
+  currentQueueList.forEach((task, idx) => {
+    const badgeClass = isQueuePausedState ? 'badge-paused' : 'badge-pending';
+    const badgeText = isQueuePausedState ? `PAUSADO (Puesto #${idx + 1})` : `Puesto #${idx + 1}`;
+
+    html += `
+      <div class="queue-card-item">
+        <div class="queue-card-header">
+          <span class="queue-badge ${badgeClass}">⏳ ${badgeText} - ${task.action.toUpperCase()}</span>
+          <button class="btn btn-secondary" style="padding: 4px 10px; font-size: 11px; width: auto; border-color: rgba(255,62,108,0.3); color: #ff4d4d;" onclick="removeTaskFromQueue('${task.id}')" title="Sacar de la cola">
+            ❌ Sacar
+          </button>
+        </div>
+        <div class="queue-card-paths">
+          <span>${task.sourceArg}</span>
+          <span style="color: var(--accent-color);">➔</span>
+          <span>${task.destArg}</span>
+        </div>
+      </div>
+    `;
+  });
+
+  queueStackContainer.innerHTML = html;
 }
 
 function updateProgressUI(running, stats, success, error, queueCount) {

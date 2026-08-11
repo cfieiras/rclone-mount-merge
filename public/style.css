@@ -438,6 +438,86 @@ h2 {
   opacity: 0.8;
 }
 
+/* Visual Queue Stack Drawer */
+.queue-card-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 480px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.queue-card-item {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: all 0.2s ease;
+}
+
+.queue-card-item:hover {
+  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.queue-card-item.active-task {
+  border-color: rgba(0, 242, 254, 0.5);
+  background: rgba(0, 242, 254, 0.04);
+  box-shadow: 0 4px 20px rgba(0, 242, 254, 0.1);
+}
+
+.queue-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.queue-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.queue-badge.badge-active {
+  background: rgba(0, 242, 254, 0.2);
+  color: var(--accent-color);
+  border: 1px solid rgba(0, 242, 254, 0.4);
+}
+
+.queue-badge.badge-pending {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-muted);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.queue-badge.badge-paused {
+  background: rgba(255, 193, 7, 0.2);
+  color: #ffc107;
+  border: 1px solid rgba(255, 193, 7, 0.4);
+}
+
+.queue-card-paths {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  word-break: break-all;
+}
+
+.queue-card-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 /* Union Builder UI */
 .panel-right {
   display: flex;

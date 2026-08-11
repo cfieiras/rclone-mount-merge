@@ -756,27 +756,37 @@ app.post('/api/unmount', (req, res) => {
 // Transfer Queue System Engine (Global Scope)
 // -------------------------------------------------------------
 const transferQueue = [];
+let isQueuePaused = false;
+
+function broadcastQueueStatus(extraData = {}) {
+  broadcast({
+    type: 'transfer_status',
+    running: !!activeTransferProcess,
+    stats: activeTransferStats,
+    queueCount: transferQueue.length,
+    queue: transferQueue,
+    isQueuePaused: isQueuePaused,
+    ...extraData
+  });
+}
 
 function enqueueOrRunTransferTask(task) {
-  if (activeTransferProcess) {
+  task.id = task.id || ('task_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6));
+  task.createdAt = task.createdAt || Date.now();
+
+  if (activeTransferProcess || isQueuePaused) {
     transferQueue.push(task);
     logToUI(`Transfer task added to queue (Position #${transferQueue.length}): ${task.action} "${task.sourceArg}" -> "${task.destArg}"`);
-    broadcast({ 
-      type: 'transfer_status', 
-      running: true, 
-      stats: activeTransferStats,
-      queueCount: transferQueue.length,
-      queue: transferQueue
-    });
-    return { status: 'queued', position: transferQueue.length, message: `Añadido a la cola de espera (Puesto #${transferQueue.length})` };
+    broadcastQueueStatus();
+    return { status: 'queued', position: transferQueue.length, id: task.id, message: `Añadido a la cola de espera (Puesto #${transferQueue.length})` };
   } else {
     runTransferTask(task);
-    return { status: 'started', message: 'Iniciando transferencia...' };
+    return { status: 'started', id: task.id, message: 'Iniciando transferencia...' };
   }
 }
 
 function processNextInQueue() {
-  if (activeTransferProcess || transferQueue.length === 0) return;
+  if (activeTransferProcess || isQueuePaused || transferQueue.length === 0) return;
   const nextTask = transferQueue.shift();
   runTransferTask(nextTask);
 }
@@ -809,6 +819,7 @@ function runTransferTask(task) {
   const child = spawn(RCLONE_EXE, processArgs);
   activeTransferProcess = child;
   activeTransferStats = {
+    id: task.id,
     mode: action,
     source: sourceArg,
     destination: destArg,
@@ -821,7 +832,7 @@ function runTransferTask(task) {
     queueLength: transferQueue.length
   };
 
-  broadcast({ type: 'transfer_status', running: true, stats: activeTransferStats, queueCount: transferQueue.length, queue: transferQueue });
+  broadcastQueueStatus();
 
   let buffer = '';
   const handleOutput = (data) => {
@@ -847,7 +858,7 @@ function runTransferTask(task) {
         activeTransferStats.eta = match[5];
       }
       activeTransferStats.queueLength = transferQueue.length;
-      broadcast({ type: 'transfer_status', running: true, stats: activeTransferStats, queueCount: transferQueue.length, queue: transferQueue });
+      broadcastQueueStatus();
     }
   };
 
@@ -861,10 +872,10 @@ function runTransferTask(task) {
 
     if (code === 0) {
       logToUI('Transfer task completed successfully!', 'success');
-      broadcast({ type: 'transfer_status', running: false, success: true, stats: finalStats, queueCount: transferQueue.length, queue: transferQueue });
+      broadcastQueueStatus({ success: true, stats: finalStats });
     } else {
       logToUI(`Transfer task failed or cancelled. Code: ${code}`, 'error');
-      broadcast({ type: 'transfer_status', running: false, success: false, error: `Código ${code}`, queueCount: transferQueue.length, queue: transferQueue });
+      broadcastQueueStatus({ success: false, error: `Código ${code}` });
     }
 
     setTimeout(processNextInQueue, 500);
@@ -903,6 +914,7 @@ app.post('/api/transfer/start', (req, res) => {
   res.json(result);
 });
 
+// Cancel All Transfers & Clear Queue Endpoint
 app.post('/api/transfer/cancel', (req, res) => {
   const queueCleared = transferQueue.length;
   transferQueue.length = 0; // Clear pending queue
@@ -912,9 +924,42 @@ app.post('/api/transfer/cancel', (req, res) => {
     activeTransferProcess.kill('SIGTERM');
     activeTransferProcess = null;
     activeTransferStats = null;
+    broadcastQueueStatus();
     return res.json({ message: `Transferencia cancelada y ${queueCleared} tareas en cola eliminadas.` });
   }
+  broadcastQueueStatus();
   res.json({ message: `Cola de transferencias vaciada (${queueCleared} tareas eliminadas).` });
+});
+
+// Queue Management Endpoints (Remove item, Toggle Pause, Clear Pending)
+app.post('/api/transfer/queue/remove', (req, res) => {
+  const { id } = req.body;
+  const idx = transferQueue.findIndex(t => t.id === id);
+  if (idx !== -1) {
+    const removed = transferQueue.splice(idx, 1)[0];
+    logToUI(`Removed task from queue: ${removed.action} "${removed.sourceArg}" -> "${removed.destArg}"`);
+    broadcastQueueStatus();
+    return res.json({ message: 'Tarea eliminada de la cola.', queueCount: transferQueue.length });
+  }
+  return res.status(404).json({ error: 'Tarea no encontrada en la cola.' });
+});
+
+app.post('/api/transfer/queue/toggle-pause', (req, res) => {
+  isQueuePaused = !isQueuePaused;
+  logToUI(isQueuePaused ? 'Transfer queue paused.' : 'Transfer queue resumed.');
+  if (!isQueuePaused && !activeTransferProcess) {
+    processNextInQueue();
+  }
+  broadcastQueueStatus();
+  res.json({ isQueuePaused, message: isQueuePaused ? 'Cola pausada.' : 'Cola reanudada.' });
+});
+
+app.post('/api/transfer/queue/clear', (req, res) => {
+  const cleared = transferQueue.length;
+  transferQueue.length = 0;
+  logToUI(`Cleared ${cleared} pending tasks from queue.`);
+  broadcastQueueStatus();
+  res.json({ message: `${cleared} tareas eliminadas de la cola.` });
 });
 
 // -------------------------------------------------------------
