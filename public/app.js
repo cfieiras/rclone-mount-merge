@@ -58,6 +58,15 @@ let activeTransferMode = 'copy';
 let isTransferRunning = false;
 let activeTransferStats = null;
 
+// Safe JSON fetch helper
+async function safeFetchJson(res) {
+  const contentType = res.headers ? res.headers.get('content-type') : '';
+  if (!contentType || !contentType.includes('application/json')) {
+    throw new Error('El servidor local está apagado o no responde. Por favor inicia launch.vbs.');
+  }
+  return await res.json();
+}
+
 // Modals
 const modalAdd = document.getElementById('modal-add');
 const modalOauth = document.getElementById('modal-oauth');
@@ -358,7 +367,7 @@ function updateTransferStatus(running, stats) {
 async function refreshData() {
   try {
     const res = await fetch('/api/drives');
-    drivesData = await res.json();
+    drivesData = await safeFetchJson(res);
     
     renderDrivesList();
     renderUnionSelectionList();

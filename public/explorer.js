@@ -54,6 +54,14 @@ const progressEta = document.getElementById('explorer-op-eta');
 const progressLog = document.getElementById('explorer-op-log');
 
 // Format Helpers
+async function safeFetchJson(res) {
+  const contentType = res.headers ? res.headers.get('content-type') : '';
+  if (!contentType || !contentType.includes('application/json')) {
+    throw new Error('El servidor local está apagado o no responde. Por favor inicia la app con launch.vbs.');
+  }
+  return await res.json();
+}
+
 function formatBytes(bytes) {
   if (bytes === undefined || bytes === null || bytes === 0) return '0 B';
   const k = 1024;
@@ -122,7 +130,7 @@ function updateProgressUI(running, stats, success, error, queueCount) {
 async function loadRemotes() {
   try {
     const res = await fetch('/api/drives');
-    const drives = await res.json();
+    const drives = await safeFetchJson(res);
     selectCloudRemote.innerHTML = '';
     
     // Add combined first if exists
@@ -163,8 +171,7 @@ async function loadLocalDirectory(reqPath) {
 
   try {
     const res = await fetch(`/api/fs/local/ls?path=${encodeURIComponent(reqPath)}`);
-    if (!res.ok) throw new Error('No se pudo cargar la carpeta local');
-    const data = await res.json();
+    const data = await safeFetchJson(res);
 
     localCurrentPath = data.isDrivesRoot ? 'drives' : data.currentPath;
     inputLocalPath.value = data.isDrivesRoot ? 'Discos de este Equipo' : data.currentPath;
@@ -256,8 +263,7 @@ async function loadCloudDirectory(remote, reqPath) {
 
   try {
     const res = await fetch(`/api/fs/cloud/ls?remote=${encodeURIComponent(remote)}&path=${encodeURIComponent(reqPath)}`);
-    if (!res.ok) throw new Error('No se pudo cargar la carpeta en la nube');
-    const data = await res.json();
+    const data = await safeFetchJson(res);
 
     cloudRemote = data.remote;
     cloudCurrentPath = data.currentPath || '';
