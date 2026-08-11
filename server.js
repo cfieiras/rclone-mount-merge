@@ -423,33 +423,34 @@ app.post('/api/drives/reconnect', (req, res) => {
     logToUI(`[RCLONE RECONNECT] ${text.trim()}`);
 
     // Auto-respond to known prompts (similar to create)
-    if (buffer.includes('Already configured - replace it?')) {
+    const lowerBuf = buffer.toLowerCase();
+    if (lowerBuf.includes('already configured') && lowerBuf.includes('replace it')) {
       logToUI('Reconnect: Overwriting existing configuration token');
       child.stdin.write('y\n');
       buffer = '';
-    } else if (buffer.includes('Use web browser to automatically authenticate')) {
+    } else if (lowerBuf.includes('use web browser to automatically authenticate')) {
       logToUI('Reconnect: Initiating Browser OAuth authorization');
       child.stdin.write('y\n');
       buffer = '';
-    } else if (buffer.includes('Choose drive_id') || buffer.includes('Chose drive to write')) {
+    } else if (lowerBuf.includes('choose drive_id') || lowerBuf.includes('chose drive to write')) {
       // Look for Option "OneDrive (personal)" and parse its index dynamically
       const match = buffer.match(/(\d+)\s*\/\s*OneDrive\s*\(personal\)/i);
       const option = match ? match[1] : '1';
       logToUI(`Reconnect: Auto-selecting OneDrive drive option: ${option}`);
       child.stdin.write(`${option}\n`);
       buffer = '';
-    } else if (buffer.includes('Found drive') && buffer.includes('Do you want to use it?')) {
+    } else if (lowerBuf.includes('found drive') && lowerBuf.includes('do you want to use it')) {
       logToUI('Reconnect: Confirming selected drive');
       child.stdin.write('y\n');
       buffer = '';
-    } else if (buffer.includes('Yes this is OK (default)')) {
+    } else if (lowerBuf.includes('yes this is ok')) {
       logToUI('Reconnect: Saving configuration');
       child.stdin.write('y\n');
       buffer = '';
     }
 
     // Auto-detect errors and terminate
-    if (buffer.includes('HTTP error 400') || buffer.includes('HTTP error 403') || buffer.includes('accessDenied') || buffer.includes('invalidRequest')) {
+    if (lowerBuf.includes('http error 400') || lowerBuf.includes('http error 403') || lowerBuf.includes('accessdenied') || lowerBuf.includes('invalidrequest')) {
       logToUI('Auto-detected OneDrive API authorization error during reconnect. Terminating...', 'error');
       child.kill('SIGKILL');
       buffer = '';
