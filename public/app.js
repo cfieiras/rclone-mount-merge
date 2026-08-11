@@ -60,11 +60,17 @@ let activeTransferStats = null;
 
 // Safe JSON fetch helper
 async function safeFetchJson(res) {
-  const contentType = res.headers ? res.headers.get('content-type') : '';
-  if (!contentType || !contentType.includes('application/json')) {
-    throw new Error('El servidor local está apagado o no responde. Por favor inicia launch.vbs.');
+  const text = await res.text();
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch (e) {
+    if (!res.ok) {
+      throw new Error(`Error en el servidor (${res.status}): ${text.substring(0, 150)}`);
+    }
+    throw new Error(`Respuesta no válida (${res.status}): ${text.substring(0, 100)}`);
   }
-  return await res.json();
+  return data;
 }
 
 // Modals
