@@ -752,18 +752,9 @@ app.post('/api/unmount', (req, res) => {
   }
 });
 
-// Transfer Start & Cancel Endpoints
-app.post('/api/transfer/start', (req, res) => {
-  const { mode, source, destination, subfolder } = req.body;
-  if (activeTransferProcess) {
-    return res.status(400).json({ error: 'Ya hay una transferencia en curso.' });
-  }
-
-  if (!source || !destination) {
-    return res.status(400).json({ error: 'Falta origen o destino.' });
-  }
-
-// Transfer Queue System
+// -------------------------------------------------------------
+// Transfer Queue System Engine (Global Scope)
+// -------------------------------------------------------------
 const transferQueue = [];
 
 function enqueueOrRunTransferTask(task) {
@@ -880,6 +871,13 @@ function runTransferTask(task) {
     checkAutoShutdown();
   });
 }
+
+// Transfer Start Endpoint
+app.post('/api/transfer/start', (req, res) => {
+  const { mode, source, destination, subfolder } = req.body;
+  if (!source || !destination) {
+    return res.status(400).json({ error: 'Falta origen o destino.' });
+  }
 
   let destRemote = destination;
   if (subfolder) {
