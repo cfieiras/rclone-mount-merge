@@ -43,10 +43,17 @@ Desarrollado sobre **Node.js (Express & WebSockets)** para el backend y una inte
 
 ## 💻 Instrucciones de Uso
 
-### Primer Inicio
-1. Descarga o clona este repositorio en tu computadora.
-2. Haz doble clic en el archivo **`launch.vbs`**.
-3. Se abrirá una ventana de escritorio independiente con la interfaz de la aplicación. En segundo plano, se instalará Rclone si no se detecta en la carpeta `bin/`.
+### 📦 Instalación Rápida (Recomendado para Distribuir)
+1. Descarga o clona este repositorio en tu equipo.
+2. Haz doble clic en el archivo **`Install.bat`**.
+3. El instalador copiará la aplicación y creará accesos directos automáticos en tu **Escritorio** y en tu **Menú Inicio**.
+4. ¡Listo! Ya puedes abrir la app en cualquier momento buscando **"Rclone Cloud Merger"** en tu Menú Inicio o haciendo doble clic en el icono del Escritorio.
+*(Para desinstalar en cualquier momento, ejecuta `Uninstall.bat`).*
+
+### Inicio Manual / Desarrollo
+1. Descarga o clona este repositorio.
+2. Haz doble clic en **`launch.vbs`** (o `run.bat` para ver la consola de logs).
+3. Se abrirá la ventana de escritorio independiente en modo aplicación.
 
 ### Conectar Cuentas (OneDrive)
 1. Haz clic en **"+ OneDrive"**.
