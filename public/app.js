@@ -414,8 +414,6 @@ async function refreshDriveLetters() {
 
 // Render Drives Left Card
 function renderDrivesList() {
-  drivesContainer.innerHTML = '';
-  
   const cloudDrives = drivesData.filter(d => d.name !== 'combined');
   const unionDrive = drivesData.find(d => d.name === 'combined');
 
@@ -429,67 +427,98 @@ function renderDrivesList() {
     return;
   }
 
-  // Render cloud remotes first
+  // Remove empty state if present
+  const emptyState = drivesContainer.querySelector('.empty-state');
+  if (emptyState) drivesContainer.innerHTML = '';
+
+  // Render or update cloud remotes
   cloudDrives.forEach(drive => {
-    const item = document.createElement('div');
-    item.className = 'drive-item';
-    item.id = `drive-item-${drive.name}`;
-    
-    item.innerHTML = `
-      <div class="drive-meta">
-        <div class="drive-name-wrapper">
-          <span class="drive-icon">☁️</span>
-          <span class="drive-name">${drive.name}</span>
+    let item = document.getElementById(`drive-item-${drive.name}`);
+    if (!item) {
+      item = document.createElement('div');
+      item.className = 'drive-item';
+      item.id = `drive-item-${drive.name}`;
+      
+      item.innerHTML = `
+        <div class="drive-meta">
+          <div class="drive-name-wrapper">
+            <span class="drive-icon">☁️</span>
+            <span class="drive-name">${drive.name}</span>
+          </div>
+          <div class="drive-actions">
+            <button class="btn-icon-only btn-reconnect" title="Re-autorizar cuenta" onclick="reconnectDrive('${drive.name}')">🔄</button>
+            <button class="btn-icon-only btn-delete" title="Eliminar cuenta" onclick="deleteDrive('${drive.name}')">🗑️</button>
+          </div>
+          <span class="drive-type">${drive.type}</span>
         </div>
-        <div class="drive-actions">
-          <button class="btn-icon-only btn-reconnect" title="Re-autorizar cuenta" onclick="reconnectDrive('${drive.name}')">🔄</button>
-          <button class="btn-icon-only btn-delete" title="Eliminar cuenta" onclick="deleteDrive('${drive.name}')">🗑️</button>
+        <div class="drive-size-container" id="space-${drive.name}">
+          <div class="progress-track">
+            <div class="progress-fill" style="width: 0%;"></div>
+          </div>
+          <div class="drive-size-text">
+            <span>Calculando espacio...</span>
+          </div>
         </div>
-        <span class="drive-type">${drive.type}</span>
-      </div>
-      <div class="drive-size-container" id="space-${drive.name}">
-        <div class="progress-track">
-          <div class="progress-fill" style="width: 0%;"></div>
-        </div>
-        <div class="drive-size-text">
-          <span>Calculando espacio...</span>
-        </div>
-      </div>
-    `;
-    drivesContainer.appendChild(item);
+      `;
+      const sep = drivesContainer.querySelector('.drive-separator');
+      if (sep) {
+        drivesContainer.insertBefore(item, sep);
+      } else {
+        drivesContainer.appendChild(item);
+      }
+    }
     loadDriveSpace(drive.name);
   });
 
-  // Render Union combined drive at the bottom if configured
-  if (unionDrive) {
-    const separator = document.createElement('div');
-    separator.style.borderTop = '1px dashed var(--card-border)';
-    separator.style.margin = '10px 0';
-    drivesContainer.appendChild(separator);
+  // Remove drive items that no longer exist
+  const existingCloudItems = drivesContainer.querySelectorAll('.drive-item:not(.union-type)');
+  existingCloudItems.forEach(el => {
+    const dName = el.id.replace('drive-item-', '');
+    if (!cloudDrives.some(d => d.name === dName)) {
+      el.remove();
+    }
+  });
 
-    const item = document.createElement('div');
-    item.className = 'drive-item union-type';
-    item.id = `drive-item-combined`;
-    
-    item.innerHTML = `
-      <div class="drive-meta">
-        <div class="drive-name-wrapper">
-          <span class="drive-icon">📁</span>
-          <span class="drive-name">Unidad Virtual Integrada (combined)</span>
+  // Render or update Union combined drive at the bottom
+  let unionItem = document.getElementById('drive-item-combined');
+  if (unionDrive) {
+    if (!unionItem) {
+      const separator = document.createElement('div');
+      separator.className = 'drive-separator';
+      separator.style.borderTop = '1px dashed var(--card-border)';
+      separator.style.margin = '10px 0';
+      drivesContainer.appendChild(separator);
+
+      unionItem = document.createElement('div');
+      unionItem.className = 'drive-item union-type';
+      unionItem.id = `drive-item-combined`;
+      
+      unionItem.innerHTML = `
+        <div class="drive-meta">
+          <div class="drive-name-wrapper">
+            <span class="drive-icon">📁</span>
+            <span class="drive-name">Unidad Virtual Integrada (combined)</span>
+          </div>
+          <span class="drive-type">union</span>
         </div>
-        <span class="drive-type">union</span>
-      </div>
-      <div class="drive-size-container" id="space-combined">
-        <div class="progress-track">
-          <div class="progress-fill" style="width: 0%;"></div>
+        <div class="drive-size-container" id="space-combined">
+          <div class="progress-track">
+            <div class="progress-fill" style="width: 0%;"></div>
+          </div>
+          <div class="drive-size-text">
+            <span>Calculando espacio total...</span>
+          </div>
         </div>
-        <div class="drive-size-text">
-          <span>Calculando espacio total...</span>
-        </div>
-      </div>
-    `;
-    drivesContainer.appendChild(item);
+      `;
+      drivesContainer.appendChild(unionItem);
+    }
     loadDriveSpace('combined');
+  } else {
+    if (unionItem) {
+      unionItem.remove();
+      const sep = drivesContainer.querySelector('.drive-separator');
+      if (sep) sep.remove();
+    }
   }
 }
 
