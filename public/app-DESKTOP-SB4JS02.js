@@ -28,7 +28,6 @@ const btnClearCache = document.getElementById('btn-clear-cache');
 const btnAddOneDrive = document.getElementById('btn-add-onedrive');
 const btnManualConfig = document.getElementById('btn-manual-config');
 const btnAppShutdown = document.getElementById('btn-app-shutdown');
-const btnOpenExplorer = document.getElementById('btn-open-explorer');
 const btnClearLogs = document.getElementById('btn-clear-logs');
 const btnCreateUnion = document.getElementById('btn-create-union');
 const btnToggleMount = document.getElementById('btn-toggle-mount');
@@ -53,6 +52,7 @@ const transferProgressSpeed = document.getElementById('transfer-progress-speed')
 const transferProgressBarFill = document.getElementById('transfer-progress-bar-fill');
 const transferProgressSize = document.getElementById('transfer-progress-size');
 const transferProgressEta = document.getElementById('transfer-progress-eta');
+const transferCurrentFile = document.getElementById('transfer-current-file');
 
 let activeTransferMode = 'copy';
 let isTransferRunning = false;
@@ -339,6 +339,9 @@ function updateTransferStatus(running, stats) {
       transferProgressSpeed.innerText = stats.speed;
       transferProgressSize.innerText = `${stats.transferred} / ${stats.total}`;
       transferProgressEta.innerText = stats.eta;
+      if (transferCurrentFile && stats.lastLog) {
+        transferCurrentFile.innerText = stats.lastLog;
+      }
     }
   } else {
     btnStartTransfer.classList.remove('hidden');
@@ -485,7 +488,23 @@ async function loadDriveSpace(name) {
 
   try {
     const res = await fetch(`/api/drives/space/${name}`);
-    if (!res.ok) throw new Error('Space failed');
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      if (errData.isTokenExpired) {
+        container.querySelector('.drive-size-text').innerHTML = `
+          <span style="color: #ff4d4d; font-weight: 500; display: inline-flex; align-items: center; gap: 4px;">
+            ⚠️ Sesión expirada. Por favor, re-autoriza.
+          </span>
+        `;
+        const itemCard = document.getElementById(`drive-item-${name}`);
+        if (itemCard) {
+          itemCard.style.borderColor = 'rgba(255, 77, 77, 0.4)';
+          itemCard.style.boxShadow = '0 0 15px rgba(255, 77, 77, 0.1)';
+        }
+        return;
+      }
+      throw new Error('Space failed');
+    }
     const space = await res.json(); // { total, used, free }
     
     if (space && space.total) {
@@ -916,11 +935,6 @@ btnCancelTransfer.addEventListener('click', async () => {
     btnCancelTransfer.disabled = false;
     btnCancelTransfer.innerText = 'Cancelar Transferencia';
   }
-});
-
-// Open Visual File Explorer Window
-btnOpenExplorer.addEventListener('click', () => {
-  window.open('/explorer.html', 'RcloneExplorer', 'width=1350,height=880');
 });
 
 // Shutdown Application Button click

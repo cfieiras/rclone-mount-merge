@@ -309,7 +309,8 @@ app.get('/api/drives/space/:name', (req, res) => {
   const name = req.params.name;
   exec(`"${RCLONE_EXE}" --config "${RCLONE_CONF}" about "${name}:" --json`, (err, stdout) => {
     if (err) {
-      return res.status(500).json({ error: err.message });
+      const isTokenExpired = err.message.includes('token expired') || err.message.includes('invalid_grant') || err.message.includes('couldn\'t fetch token');
+      return res.status(500).json({ error: err.message, isTokenExpired });
     }
     try {
       const space = JSON.parse(stdout);
@@ -422,29 +423,38 @@ app.post('/api/drives/reconnect', (req, res) => {
     logToUI(`[RCLONE RECONNECT] ${text.trim()}`);
 
     // Auto-respond to known prompts (similar to create)
-    if (buffer.includes('Use web browser to automatically authenticate')) {
+    const lowerBuf = buffer.toLowerCase();
+    if (lowerBuf.includes('already configured') && lowerBuf.includes('replace it')) {
+      logToUI('Reconnect: Overwriting existing configuration token');
+      child.stdin.write('y\n');
+      buffer = '';
+    } else if (lowerBuf.includes('use web browser to automatically authenticate')) {
       logToUI('Reconnect: Initiating Browser OAuth authorization');
       child.stdin.write('y\n');
       buffer = '';
-    } else if (buffer.includes('Choose drive_id') || buffer.includes('Chose drive to write')) {
+    } else if (lowerBuf.includes('option config_type') || lowerBuf.includes('type of connection')) {
+      logToUI('Reconnect: Selecting connection type (OneDrive)');
+      child.stdin.write('1\n');
+      buffer = '';
+    } else if (lowerBuf.includes('choose drive_id') || lowerBuf.includes('chose drive to write')) {
       // Look for Option "OneDrive (personal)" and parse its index dynamically
       const match = buffer.match(/(\d+)\s*\/\s*OneDrive\s*\(personal\)/i);
       const option = match ? match[1] : '1';
       logToUI(`Reconnect: Auto-selecting OneDrive drive option: ${option}`);
       child.stdin.write(`${option}\n`);
       buffer = '';
-    } else if (buffer.includes('Found drive') && buffer.includes('Do you want to use it?')) {
+    } else if (lowerBuf.includes('found drive') && lowerBuf.includes('do you want to use it')) {
       logToUI('Reconnect: Confirming selected drive');
       child.stdin.write('y\n');
       buffer = '';
-    } else if (buffer.includes('Yes this is OK (default)')) {
+    } else if (lowerBuf.includes('yes this is ok')) {
       logToUI('Reconnect: Saving configuration');
       child.stdin.write('y\n');
       buffer = '';
     }
 
     // Auto-detect errors and terminate
-    if (buffer.includes('HTTP error 400') || buffer.includes('HTTP error 403') || buffer.includes('accessDenied') || buffer.includes('invalidRequest')) {
+    if (lowerBuf.includes('http error 400') || lowerBuf.includes('http error 403') || lowerBuf.includes('accessdenied') || lowerBuf.includes('invalidrequest')) {
       logToUI('Auto-detected OneDrive API authorization error during reconnect. Terminating...', 'error');
       child.kill('SIGKILL');
       buffer = '';
@@ -779,6 +789,7 @@ app.post('/api/transfer/start', (req, res) => {
     destRemote,
     '--stats', '1s',
     '--stats-one-line',
+    '--log-level', 'INFO',
     '--onedrive-chunk-size', '20M',
     '--buffer-size', '32M',
     '--exclude', 'node_modules/**',
@@ -821,13 +832,14 @@ app.post('/api/transfer/start', (req, res) => {
       const cleanLog = trimmed.replace(/^\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}:\d{2} \w+\s*:\s*/, '');
       activeTransferStats.lastLog = cleanLog;
 
-      // Regex to parse stats-one-line using \w*B for universal unit matching
-      const match = trimmed.match(/([\d\.]+\s*\w*B)\s*\/\s*([\d\.]+\s*\w*B),\s*(\d+)%,\s*([\d\.]+\s*\w*B\/s),\s*ETA\s*([^\s,\(\)]+)/i);
+      // Bulletproof regex to parse stats-one-line under any unit and initial states
+      const match = trimmed.match(/([\d\.]+\s*\w*)\s*\/\s*([\d\.]+\s*\w*),\s*([\d\-]+)%?,\s*([\d\.]+\s*[\w\/]*),\s*ETA\s*([^\s,\(\)]+)/i);
       
       if (match) {
         activeTransferStats.transferred = match[1];
         activeTransferStats.total = match[2];
-        activeTransferStats.progress = parseInt(match[3], 10);
+        const pct = match[3];
+        activeTransferStats.progress = pct === '-' ? 0 : parseInt(pct, 10);
         activeTransferStats.speed = match[4];
         activeTransferStats.eta = match[5];
       }
@@ -867,288 +879,6 @@ app.post('/api/transfer/cancel', (req, res) => {
     return res.json({ message: 'Transferencia cancelada con éxito.' });
   }
   res.status(400).json({ error: 'No hay ninguna transferencia en curso.' });
-});
-
-// -------------------------------------------------------------
-// Visual File Explorer APIs (Dual Pane)
-// -------------------------------------------------------------
-
-// Local filesystem listing
-app.get('/api/fs/local/ls', (req, res) => {
-  const reqPath = req.query.path || '';
-
-  // If path is empty or 'drives', list Windows drive letters
-  if (!reqPath || reqPath.toLowerCase() === 'drives') {
-    exec('powershell -NoProfile -Command "[System.IO.DriveInfo]::GetDrives() | ForEach-Object { @{ Name=$_.Name; Free=$_.TotalFreeSpace; Total=$_.TotalSize; Type=$_.DriveType } | ConvertTo-Json -Compress }"', (err, stdout) => {
-      let drives = [];
-      try {
-        const lines = stdout.trim().split(/\r?\n/).filter(Boolean);
-        lines.forEach(l => {
-          try {
-            const d = JSON.parse(l);
-            drives.push({
-              name: d.Name.replace('\\', ''),
-              path: d.Name,
-              isDir: true,
-              isDrive: true,
-              size: d.Total || 0,
-              free: d.Free || 0
-            });
-          } catch (e) {}
-        });
-      } catch (e) {}
-
-      if (drives.length === 0) {
-        drives = [{ name: 'C:', path: 'C:\\', isDir: true, isDrive: true }];
-      }
-
-      res.json({ currentPath: '', isDrivesRoot: true, items: drives });
-    });
-    return;
-  }
-
-  // Normal local folder listing
-  const targetPath = path.resolve(reqPath);
-  if (!fs.existsSync(targetPath)) {
-    return res.status(404).json({ error: 'La ruta local especificada no existe.' });
-  }
-
-  try {
-    const files = fs.readdirSync(targetPath);
-    const items = [];
-
-    for (const f of files) {
-      try {
-        const fullPath = path.join(targetPath, f);
-        const stat = fs.statSync(fullPath);
-        items.push({
-          name: f,
-          path: fullPath,
-          isDir: stat.isDirectory(),
-          size: stat.size,
-          modTime: stat.mtime
-        });
-      } catch (e) {}
-    }
-
-    items.sort((a, b) => {
-      if (a.isDir && !b.isDir) return -1;
-      if (!a.isDir && b.isDir) return 1;
-      return a.name.localeCompare(b.name);
-    });
-
-    const parentPath = path.dirname(targetPath) === targetPath ? 'drives' : path.dirname(targetPath);
-    res.json({ currentPath: targetPath, parentPath, isDrivesRoot: false, items });
-  } catch (error) {
-    res.status(500).json({ error: `Error leyendo directorio local: ${error.message}` });
-  }
-});
-
-// Cloud filesystem listing (Rclone lsjson)
-app.get('/api/fs/cloud/ls', (req, res) => {
-  const remote = req.query.remote || 'combined';
-  const relPath = req.query.path || '';
-
-  const remoteTarget = relPath ? `${remote}:${relPath}` : `${remote}:`;
-
-  exec(`"${RCLONE_EXE}" --config "${RCLONE_CONF}" lsjson "${remoteTarget}"`, (err, stdout, stderr) => {
-    if (err) {
-      logToUI(`Error listing cloud directory "${remoteTarget}": ${err.message}`, 'error');
-      return res.status(500).json({ error: `No se pudo listar la carpeta en la nube: ${stderr || err.message}` });
-    }
-
-    try {
-      const parsed = JSON.parse(stdout);
-      const items = parsed.map(item => ({
-        name: item.Name,
-        path: relPath ? `${relPath}/${item.Name}` : item.Name,
-        isDir: item.IsDir,
-        size: item.Size,
-        modTime: item.ModTime
-      }));
-
-      items.sort((a, b) => {
-        if (a.isDir && !b.isDir) return -1;
-        if (!a.isDir && b.isDir) return 1;
-        return a.name.localeCompare(b.name);
-      });
-
-      const parentPath = relPath.includes('/') ? relPath.substring(0, relPath.lastIndexOf('/')) : (relPath ? '' : null);
-      res.json({ remote, currentPath: relPath, parentPath, items });
-    } catch (e) {
-      res.status(500).json({ error: 'Error parseando respuesta de Rclone.' });
-    }
-  });
-});
-
-// File System Batch Operation (Copy, Move, Mkdir, Delete)
-app.post('/api/fs/operation', (req, res) => {
-  const { action, srcType, srcPath, dstType, dstPath, items, newDirName } = req.body;
-
-  if (action === 'mkdir') {
-    if (dstType === 'local') {
-      const targetDir = path.join(dstPath, newDirName);
-      try {
-        fs.mkdirSync(targetDir, { recursive: true });
-        logToUI(`Created local directory: ${targetDir}`, 'success');
-        return res.json({ message: 'Carpeta creada con éxito.' });
-      } catch (e) {
-        return res.status(500).json({ error: e.message });
-      }
-    } else {
-      const remoteTarget = dstPath ? `${dstType}:${dstPath}/${newDirName}` : `${dstType}:${newDirName}`;
-      exec(`"${RCLONE_EXE}" --config "${RCLONE_CONF}" mkdir "${remoteTarget}"`, (err) => {
-        if (err) return res.status(500).json({ error: err.message });
-        logToUI(`Created cloud directory: ${remoteTarget}`, 'success');
-        res.json({ message: 'Carpeta en la nube creada con éxito.' });
-      });
-    }
-    return;
-  }
-
-  if (action === 'delete') {
-    if (!items || items.length === 0) return res.status(400).json({ error: 'No hay elementos seleccionados para eliminar.' });
-
-    let deletedCount = 0;
-    let errors = [];
-
-    const deleteItem = (idx) => {
-      if (idx >= items.length) {
-        if (errors.length > 0) return res.status(500).json({ error: errors.join('; ') });
-        logToUI(`Deleted ${deletedCount} items successfully!`, 'success');
-        return res.json({ message: `${deletedCount} elementos eliminados con éxito.` });
-      }
-
-      const item = items[idx];
-      if (srcType === 'local') {
-        try {
-          fs.rmSync(item.path, { recursive: true, force: true });
-          deletedCount++;
-        } catch (e) {
-          errors.push(`Error borrando ${item.name}: ${e.message}`);
-        }
-        deleteItem(idx + 1);
-      } else {
-        const cmd = item.isDir ? 'purge' : 'deletefile';
-        const remoteTarget = `${srcType}:${item.path}`;
-        exec(`"${RCLONE_EXE}" --config "${RCLONE_CONF}" ${cmd} "${remoteTarget}"`, (err) => {
-          if (err) errors.push(`Error borrando ${item.name}: ${err.message}`);
-          else deletedCount++;
-          deleteItem(idx + 1);
-        });
-      }
-    };
-
-    deleteItem(0);
-    return;
-  }
-
-  if (action === 'copy' || action === 'move' || action === 'sync') {
-    if (activeTransferProcess) {
-      return res.status(400).json({ error: 'Ya hay una operación de transferencia en curso.' });
-    }
-
-    if (action !== 'sync' && (!items || items.length === 0)) {
-      return res.status(400).json({ error: 'No se seleccionaron elementos.' });
-    }
-
-    let sourceArg = '';
-    let destArg = '';
-
-    if (srcType === 'local') {
-      sourceArg = (items && items.length === 1) ? items[0].path : srcPath;
-    } else {
-      sourceArg = (items && items.length === 1) ? `${srcType}:${items[0].path}` : (srcPath ? `${srcType}:${srcPath}` : `${srcType}:`);
-    }
-
-    if (dstType === 'local') {
-      destArg = dstPath;
-    } else {
-      destArg = dstPath ? `${dstType}:${dstPath}` : `${dstType}:`;
-    }
-
-    logToUI(`Starting ${action} from "${sourceArg}" to "${destArg}"...`);
-
-    const processArgs = [
-      '--config', RCLONE_CONF,
-      action,
-      sourceArg,
-      destArg,
-      '--stats', '1s',
-      '--stats-one-line',
-      '--log-level', 'INFO',
-      '--onedrive-chunk-size', '20M',
-      '--buffer-size', '32M',
-      '--exclude', 'node_modules/**',
-      '--exclude', '.git/**',
-      '--exclude', 'bin/cache/**',
-      '--exclude', 'bin/rclone-temp/**',
-      '--exclude', 'Thumbs.db',
-      '--exclude', 'Desktop.ini'
-    ];
-
-    const child = spawn(RCLONE_EXE, processArgs);
-    activeTransferProcess = child;
-    activeTransferStats = {
-      mode: action,
-      source: sourceArg,
-      destination: destArg,
-      progress: 0,
-      speed: '0 B/s',
-      transferred: '0 B',
-      total: '0 B',
-      eta: 'calculando...',
-      lastLog: 'Iniciando...'
-    };
-
-    broadcast({ type: 'transfer_status', running: true, stats: activeTransferStats });
-
-    let buffer = '';
-    const handleOutput = (data) => {
-      buffer += data.toString();
-      const lines = buffer.split(/\r?\n/);
-      buffer = lines.pop();
-
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-        
-        logToUI(`[EXPLORER OP] ${trimmed}`);
-        const cleanLog = trimmed.replace(/^\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}:\d{2} \w+\s*:\s*/, '');
-        activeTransferStats.lastLog = cleanLog;
-
-        const match = trimmed.match(/([\d\.]+\s*\w*)\s*\/\s*([\d\.]+\s*\w*),\s*([\d\-]+)%?,\s*([\d\.]+\s*[\w\/]*),\s*ETA\s*([^\s,\(\)]+)/i);
-        if (match) {
-          activeTransferStats.transferred = match[1];
-          activeTransferStats.total = match[2];
-          const pct = match[3];
-          activeTransferStats.progress = pct === '-' ? 0 : parseInt(pct, 10);
-          activeTransferStats.speed = match[4];
-          activeTransferStats.eta = match[5];
-        }
-        broadcast({ type: 'transfer_status', running: true, stats: activeTransferStats });
-      }
-    };
-
-    child.stdout.on('data', handleOutput);
-    child.stderr.on('data', handleOutput);
-
-    child.on('close', (code) => {
-      activeTransferProcess = null;
-      const finalStats = activeTransferStats;
-      activeTransferStats = null;
-      if (code === 0) {
-        logToUI('Operation completed successfully!', 'success');
-        broadcast({ type: 'transfer_status', running: false, success: true, stats: finalStats });
-      } else {
-        logToUI(`Operation failed or cancelled. Code: ${code}`, 'error');
-        broadcast({ type: 'transfer_status', running: false, success: false, error: `Código ${code}` });
-      }
-      checkAutoShutdown();
-    });
-
-    res.json({ status: 'started' });
-  }
 });
 
 // Clean exit process handler

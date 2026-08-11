@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Explorador Visual - FreeFileSync Style</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <style>
+    body {
+      padding: 15px;
+      overflow-x: hidden;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      box-sizing: border-box;
+    }
+    
+    .explorer-container {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      gap: 15px;
+    }
+
+    .explorer-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: var(--panel-bg);
+      border: 1px solid var(--card-border);
+      padding: 12px 20px;
+      border-radius: 14px;
+      backdrop-filter: blur(10px);
+    }
+
+    .explorer-title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .explorer-title h2 {
+      margin: 0;
+      font-size: 18px;
+    }
+
+    .dual-pane-wrapper {
+      display: flex;
+      flex: 1;
+      gap: 15px;
+      min-height: 0; /* flex container overflow fix */
+    }
+
+    .pane-card {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: var(--panel-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 15px;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .pane-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .pane-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 600;
+      font-size: 15px;
+      color: #fff;
+    }
+
+    .path-nav-bar {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .path-input {
+      flex: 1;
+      background: rgba(0, 0, 0, 0.4);
+      border: 1px solid var(--card-border);
+      color: #fff;
+      padding: 6px 12px;
+      border-radius: 8px;
+      font-family: 'Fira Code', monospace;
+      font-size: 12px;
+    }
+
+    .btn-nav {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--card-border);
+      color: #fff;
+      padding: 6px 10px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 12px;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      transition: all 0.2s;
+    }
+    .btn-nav:hover {
+      background: rgba(255, 255, 255, 0.15);
+    }
+
+    .table-container {
+      flex: 1;
+      overflow-y: auto;
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      background: rgba(0, 0, 0, 0.2);
+    }
+
+    .file-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      text-align: left;
+    }
+
+    .file-table th {
+      position: sticky;
+      top: 0;
+      background: rgba(20, 25, 40, 0.95);
+      backdrop-filter: blur(8px);
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--card-border);
+      color: var(--text-muted);
+      font-weight: 500;
+      z-index: 1;
+    }
+
+    .file-table td {
+      padding: 8px 12px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+      color: #e0e6ed;
+    }
+
+    .file-table tr {
+      cursor: pointer;
+      user-select: none;
+      transition: background 0.15s;
+    }
+
+    .file-table tr:hover {
+      background: rgba(0, 210, 255, 0.08);
+    }
+
+    .file-table tr.selected {
+      background: rgba(0, 210, 255, 0.18);
+    }
+
+    .item-name {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      word-break: break-all;
+    }
+
+    .item-icon {
+      font-size: 16px;
+    }
+
+    .center-actions-bar {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 12px;
+      align-items: center;
+      padding: 0 5px;
+    }
+
+    .btn-action-tool {
+      width: 110px;
+      padding: 10px 8px;
+      font-size: 12px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      border-radius: 10px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    }
+
+    .pane-footer {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      color: var(--text-muted);
+      padding: 4px 5px;
+    }
+
+    .explorer-progress-footer {
+      background: var(--panel-bg);
+      border: 1px solid var(--card-border);
+      padding: 12px 20px;
+      border-radius: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+  </style>
+</head>
+<body>
+  <div class="explorer-container">
+    <!-- Header Bar -->
+    <header class="explorer-header">
+      <div class="explorer-title">
+        <span style="font-size: 24px;">📂</span>
+        <div>
+          <h2>Explorador Visual - Transferencia Dual</h2>
+          <span style="font-size: 12px; color: var(--text-muted);">Estilo FreeFileSync: Copia, mueve y sincroniza de un lado a otro en tiempo real</span>
+        </div>
+      </div>
+      <div style="display: flex; gap: 10px;">
+        <button class="btn-nav" id="btn-global-refresh">🔄 Recargar Paneles</button>
+      </div>
+    </header>
+
+    <!-- Dual Pane Area -->
+    <div class="dual-pane-wrapper">
+      <!-- Left Pane: Local System -->
+      <section class="pane-card" id="pane-local">
+        <div class="pane-header">
+          <div class="pane-title">
+            <span>💻</span>
+            <span>Sistema Local (PC)</span>
+          </div>
+          <button class="btn-nav" id="btn-local-mkdir">📁 Nueva Carpeta</button>
+        </div>
+
+        <div class="path-nav-bar">
+          <button class="btn-nav" id="btn-local-up" title="Carpeta superior">⬆️</button>
+          <button class="btn-nav" id="btn-local-home" title="Ver Discos">🏠</button>
+          <input type="text" id="input-local-path" class="path-input" placeholder="C:\Ruta\Local">
+          <button class="btn-nav" id="btn-local-go">Ir</button>
+        </div>
+
+        <div class="table-container">
+          <table class="file-table" id="table-local">
+            <thead>
+              <tr>
+                <th style="width: 30px;"><input type="checkbox" id="chk-local-all"></th>
+                <th>Nombre</th>
+                <th style="width: 90px;">Tamaño</th>
+                <th style="width: 130px;">Modificado</th>
+              </tr>
+            </thead>
+            <tbody id="tbody-local">
+              <!-- Loaded dynamically -->
+            </tbody>
+          </table>
+        </div>
+
+        <div class="pane-footer">
+          <span id="footer-local-info">Cargando elementos...</span>
+          <span id="footer-local-selected">0 seleccionados</span>
+        </div>
+      </section>
+
+      <!-- Center Action Toolbar -->
+      <div class="center-actions-bar">
+        <button id="btn-action-copy-to-cloud" class="btn btn-accent btn-action-tool" title="Copiar seleccionados del PC a la Nube">
+          Copiar ➡️
+        </button>
+        <button id="btn-action-copy-to-local" class="btn btn-accent btn-action-tool" title="Copiar seleccionados de la Nube al PC">
+          ⬅️ Copiar
+        </button>
+        <div style="height: 10px;"></div>
+        <button id="btn-action-move-to-cloud" class="btn btn-primary btn-action-tool" title="Mover seleccionados del PC a la Nube">
+          Mover ➡️
+        </button>
+        <button id="btn-action-move-to-local" class="btn btn-primary btn-action-tool" title="Mover seleccionados de la Nube al PC">
+          ⬅️ Mover
+        </button>
+        <div style="height: 10px;"></div>
+        <button id="btn-action-sync" class="btn btn-action-tool" style="background: linear-gradient(135deg, #f39c12, #e67e22); color: #fff;" title="Sincronizar carpeta izquierda con carpeta derecha">
+          🔄 Sync
+        </button>
+        <button id="btn-action-delete" class="btn btn-danger btn-action-tool" title="Eliminar elementos seleccionados">
+          🗑️ Eliminar
+        </button>
+      </div>
+
+      <!-- Right Pane: Cloud Remotes -->
+      <section class="pane-card" id="pane-cloud">
+        <div class="pane-header">
+          <div class="pane-title">
+            <span>☁️</span>
+            <span>Nube:</span>
+            <select id="select-cloud-remote" class="path-input" style="width: auto; font-weight: bold; color: var(--primary-color);">
+              <!-- Remotes populated dynamically -->
+            </select>
+          </div>
+          <button class="btn-nav" id="btn-cloud-mkdir">📁 Nueva Carpeta</button>
+        </div>
+
+        <div class="path-nav-bar">
+          <button class="btn-nav" id="btn-cloud-up" title="Carpeta superior">⬆️</button>
+          <button class="btn-nav" id="btn-cloud-home" title="Raíz de la Nube">🏠</button>
+          <input type="text" id="input-cloud-path" class="path-input" placeholder="/Carpeta/Nube">
+          <button class="btn-nav" id="btn-cloud-go">Ir</button>
+        </div>
+
+        <div class="table-container">
+          <table class="file-table" id="table-cloud">
+            <thead>
+              <tr>
+                <th style="width: 30px;"><input type="checkbox" id="chk-cloud-all"></th>
+                <th>Nombre</th>
+                <th style="width: 90px;">Tamaño</th>
+                <th style="width: 130px;">Modificado</th>
+              </tr>
+            </thead>
+            <tbody id="tbody-cloud">
+              <!-- Loaded dynamically -->
+            </tbody>
+          </table>
+        </div>
+
+        <div class="pane-footer">
+          <span id="footer-cloud-info">Cargando elementos...</span>
+          <span id="footer-cloud-selected">0 seleccionados</span>
+        </div>
+      </section>
+    </div>
+
+    <!-- Bottom Progress Box -->
+    <div id="explorer-progress-box" class="explorer-progress-footer hidden">
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <span id="explorer-op-title" style="font-weight: 600; font-size: 13px; color: var(--accent-color);">Operación en curso...</span>
+        <span id="explorer-op-percent" style="font-weight: 700; font-size: 14px;">0%</span>
+      </div>
+      <div class="progress-bar-container" style="height: 8px;">
+        <div id="explorer-op-bar-fill" class="progress-bar-fill" style="width: 0%;"></div>
+      </div>
+      <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted);">
+        <span id="explorer-op-size">0 B / 0 B</span>
+        <span id="explorer-op-speed">0 MB/s</span>
+        <span id="explorer-op-eta">ETA: -</span>
+      </div>
+      <div id="explorer-op-log" style="font-size: 11px; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 5px;">
+        Iniciando...
+      </div>
+    </div>
+  </div>
+
+  <script src="explorer.js"></script>
+</body>
+</html>
