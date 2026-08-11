@@ -432,6 +432,10 @@ app.post('/api/drives/reconnect', (req, res) => {
       logToUI('Reconnect: Initiating Browser OAuth authorization');
       child.stdin.write('y\n');
       buffer = '';
+    } else if (lowerBuf.includes('option config_type') || lowerBuf.includes('type of connection')) {
+      logToUI('Reconnect: Selecting connection type (OneDrive)');
+      child.stdin.write('1\n');
+      buffer = '';
     } else if (lowerBuf.includes('choose drive_id') || lowerBuf.includes('chose drive to write')) {
       // Look for Option "OneDrive (personal)" and parse its index dynamically
       const match = buffer.match(/(\d+)\s*\/\s*OneDrive\s*\(personal\)/i);
