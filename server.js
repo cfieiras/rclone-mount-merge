@@ -423,7 +423,11 @@ app.post('/api/drives/reconnect', (req, res) => {
     logToUI(`[RCLONE RECONNECT] ${text.trim()}`);
 
     // Auto-respond to known prompts (similar to create)
-    if (buffer.includes('Use web browser to automatically authenticate')) {
+    if (buffer.includes('Already configured - replace it?')) {
+      logToUI('Reconnect: Overwriting existing configuration token');
+      child.stdin.write('y\n');
+      buffer = '';
+    } else if (buffer.includes('Use web browser to automatically authenticate')) {
       logToUI('Reconnect: Initiating Browser OAuth authorization');
       child.stdin.write('y\n');
       buffer = '';
