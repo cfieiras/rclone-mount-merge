@@ -587,7 +587,10 @@ function performMount(remote, letter, method, volumeName = 'Nubes Unidas') {
       '--vfs-cache-mode', 'full',
       '--onedrive-chunk-size', '20M',
       '--buffer-size', '32M',
-      '--cache-dir', path.join(BIN_DIR, 'cache')
+      '--cache-dir', path.join(BIN_DIR, 'cache'),
+      '--exclude', 'Almacén personal/**',
+      '--exclude', 'Almacen personal/**',
+      '--exclude', 'Personal Vault/**'
     ];
     
     const child = spawn(RCLONE_EXE, processArgs);
@@ -647,7 +650,10 @@ function performMount(remote, letter, method, volumeName = 'Nubes Unidas') {
       '--volname', volumeName,
       '--onedrive-chunk-size', '20M',
       '--buffer-size', '32M',
-      '--cache-dir', path.join(BIN_DIR, 'cache')
+      '--cache-dir', path.join(BIN_DIR, 'cache'),
+      '--exclude', 'Almacén personal/**',
+      '--exclude', 'Almacen personal/**',
+      '--exclude', 'Personal Vault/**'
     ];
 
     const child = spawn(RCLONE_EXE, processArgs);
@@ -803,7 +809,10 @@ function runTransferTask(task) {
     '--exclude', 'bin/cache/**',
     '--exclude', 'bin/rclone-temp/**',
     '--exclude', 'Thumbs.db',
-    '--exclude', 'Desktop.ini'
+    '--exclude', 'Desktop.ini',
+    '--exclude', 'Almacén personal/**',
+    '--exclude', 'Almacen personal/**',
+    '--exclude', 'Personal Vault/**'
   ];
 
   const child = spawn(RCLONE_EXE, processArgs);
