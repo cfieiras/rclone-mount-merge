@@ -599,6 +599,25 @@ btnDelete.addEventListener('click', () => {
   }
 });
 
+// Cancel Active Operation / Clear Queue Button
+const btnCancelExplorerOp = document.getElementById('btn-cancel-explorer-op');
+if (btnCancelExplorerOp) {
+  btnCancelExplorerOp.addEventListener('click', async () => {
+    if (!confirm('¿Estás seguro de que deseas cancelar la operación activa y vaciar la cola de transferencias pendientes?')) return;
+    try {
+      const res = await fetch('/api/transfer/cancel', { method: 'POST' });
+      const data = await res.json();
+      if (res.ok) {
+        progressLog.innerText = data.message || 'Operación cancelada.';
+      } else {
+        alert(`Error al cancelar: ${data.error}`);
+      }
+    } catch (e) {
+      alert(`Error de conexión: ${e.message}`);
+    }
+  });
+}
+
 // App Startup
 initSocket();
 loadRemotes();
