@@ -488,7 +488,23 @@ async function loadDriveSpace(name) {
 
   try {
     const res = await fetch(`/api/drives/space/${name}`);
-    if (!res.ok) throw new Error('Space failed');
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      if (errData.isTokenExpired) {
+        container.querySelector('.drive-size-text').innerHTML = `
+          <span style="color: #ff4d4d; font-weight: 500; display: inline-flex; align-items: center; gap: 4px;">
+            ⚠️ Sesión expirada. Por favor, re-autoriza.
+          </span>
+        `;
+        const itemCard = document.getElementById(`drive-item-${name}`);
+        if (itemCard) {
+          itemCard.style.borderColor = 'rgba(255, 77, 77, 0.4)';
+          itemCard.style.boxShadow = '0 0 15px rgba(255, 77, 77, 0.1)';
+        }
+        return;
+      }
+      throw new Error('Space failed');
+    }
     const space = await res.json(); // { total, used, free }
     
     if (space && space.total) {

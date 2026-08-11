@@ -309,7 +309,8 @@ app.get('/api/drives/space/:name', (req, res) => {
   const name = req.params.name;
   exec(`"${RCLONE_EXE}" --config "${RCLONE_CONF}" about "${name}:" --json`, (err, stdout) => {
     if (err) {
-      return res.status(500).json({ error: err.message });
+      const isTokenExpired = err.message.includes('token expired') || err.message.includes('invalid_grant') || err.message.includes('couldn\'t fetch token');
+      return res.status(500).json({ error: err.message, isTokenExpired });
     }
     try {
       const space = JSON.parse(stdout);
