@@ -1193,6 +1193,68 @@ app.post('/api/fs/operation', (req, res) => {
   return res.status(400).json({ error: 'Acción no soportada o datos incompletos.' });
 });
 
+// Folder Comparison & Audit Endpoint (Size, Count & Diff Check)
+app.post('/api/fs/compare', (req, res) => {
+  const { srcType, srcPath, dstType, dstPath } = req.body;
+
+  if (srcType === 'local' && srcPath === 'drives') {
+    return res.status(400).json({ error: 'Selecciona una carpeta o disco en el panel izquierdo.' });
+  }
+  if (dstType === 'local' && dstPath === 'drives') {
+    return res.status(400).json({ error: 'Selecciona una carpeta o disco en el panel derecho.' });
+  }
+
+  const sourceTarget = srcType === 'local' ? srcPath : (srcPath ? `${srcType}:${srcPath}` : `${srcType}:`);
+  const destTarget = dstType === 'local' ? dstPath : (dstPath ? `${dstType}:${dstPath}` : `${dstType}:`);
+
+  logToUI(`Comparing "${sourceTarget}" vs "${destTarget}"...`);
+
+  // Run rclone size on source
+  exec(`"${RCLONE_EXE}" --config "${RCLONE_CONF}" size "${sourceTarget}" --json`, (err1, stdout1) => {
+    let srcStats = { count: 0, bytes: 0 };
+    try { srcStats = JSON.parse(stdout1); } catch (e) {}
+
+    // Run rclone size on dest
+    exec(`"${RCLONE_EXE}" --config "${RCLONE_CONF}" size "${destTarget}" --json`, (err2, stdout2) => {
+      let dstStats = { count: 0, bytes: 0 };
+      try { dstStats = JSON.parse(stdout2); } catch (e) {}
+
+      // Run rclone check --combined -
+      exec(`"${RCLONE_EXE}" --config "${RCLONE_CONF}" check "${sourceTarget}" "${destTarget}" --one-way --combined -`, { maxBuffer: 10 * 1024 * 1024 }, (err3, stdout3) => {
+        let matching = 0;
+        let missingInDest = 0;
+        let differing = 0;
+        let extraInDest = 0;
+
+        if (stdout3) {
+          const lines = stdout3.split(/\r?\n/);
+          for (const l of lines) {
+            const trimmed = l.trim();
+            if (trimmed.startsWith('=')) matching++;
+            else if (trimmed.startsWith('+')) missingInDest++;
+            else if (trimmed.startsWith('*')) differing++;
+            else if (trimmed.startsWith('-')) extraInDest++;
+          }
+        }
+
+        const isIdentical = (missingInDest === 0 && differing === 0 && srcStats.count === dstStats.count && srcStats.bytes === dstStats.bytes);
+
+        res.json({
+          sourceTarget,
+          destTarget,
+          srcStats,
+          dstStats,
+          matching,
+          missingInDest,
+          differing,
+          extraInDest,
+          isIdentical
+        });
+      });
+    });
+  });
+});
+
 // Clean exit process handler
 function cleanExit() {
   console.log('Cleaning up subprocesses before exit...');

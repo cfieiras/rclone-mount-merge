@@ -908,6 +908,110 @@ if (btnCancelExplorerOp) {
   });
 }
 
+// Folder Comparison & Audit Controller
+const btnCompare = document.getElementById('btn-action-compare');
+const modalCompareResult = document.getElementById('modal-compare-result');
+const btnCloseCompareModal = document.getElementById('btn-close-compare-modal');
+const compareModalBody = document.getElementById('compare-modal-body');
+
+if (btnCloseCompareModal) {
+  btnCloseCompareModal.addEventListener('click', () => {
+    modalCompareResult.classList.add('hidden');
+  });
+}
+
+if (btnCompare) {
+  btnCompare.addEventListener('click', async () => {
+    if (leftPane.mode === 'local' && leftPane.path === 'drives') {
+      alert('Selecciona una carpeta o disco en el panel izquierdo para comparar.');
+      return;
+    }
+    if (rightPane.mode === 'local' && rightPane.path === 'drives') {
+      alert('Selecciona una carpeta o disco en el panel derecho para comparar.');
+      return;
+    }
+
+    modalCompareResult.classList.remove('hidden');
+    compareModalBody.innerHTML = `
+      <div style="text-align: center; padding: 40px; color: var(--text-muted);">
+        <div style="font-size: 32px; margin-bottom: 10px;">⏳</div>
+        <p style="font-weight: 600; color: #fff;">Escaneando y comparando elementos en ambos lados...</p>
+        <span style="font-size: 12px;">Analizando número de archivos, bytes totales y diferencias</span>
+      </div>
+    `;
+
+    try {
+      const res = await fetch('/api/fs/compare', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          srcType: leftPane.mode === 'local' ? 'local' : leftPane.remote,
+          srcPath: leftPane.path,
+          dstType: rightPane.mode === 'local' ? 'local' : rightPane.remote,
+          dstPath: rightPane.path
+        })
+      });
+
+      const data = await safeFetchJson(res);
+      if (!res.ok) {
+        compareModalBody.innerHTML = `<div style="color: #ff4d4d; padding: 20px; text-align: center;">Error: ${data.error}</div>`;
+        return;
+      }
+
+      renderCompareResults(data);
+    } catch (e) {
+      compareModalBody.innerHTML = `<div style="color: #ff4d4d; padding: 20px; text-align: center;">Error de conexión: ${e.message}</div>`;
+    }
+  });
+}
+
+function renderCompareResults(data) {
+  const statusBadge = data.isIdentical
+    ? `<div style="background: rgba(46, 204, 113, 0.15); border: 1px solid rgba(46, 204, 113, 0.4); color: #2ecc71; padding: 10px 14px; border-radius: 8px; font-weight: 700; text-align: center; margin-bottom: 15px;">🟢 AMBAS CARPETAS SON 100% IDÉNTICAS EN ARCHIVOS Y PESO</div>`
+    : `<div style="background: rgba(255, 193, 7, 0.15); border: 1px solid rgba(255, 193, 7, 0.4); color: #ffc107; padding: 10px 14px; border-radius: 8px; font-weight: 700; text-align: center; margin-bottom: 15px;">⚠️ SE ENCONTRARON DIFERENCIAS ENTRE AMBAS CARPETAS</div>`;
+
+  compareModalBody.innerHTML = `
+    ${statusBadge}
+
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+      <!-- Left Source Card -->
+      <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--card-border); border-radius: 10px; padding: 14px;">
+        <h4 style="margin: 0 0 8px 0; color: var(--accent-color); font-size: 14px;">💻 Origen (Panel Izquierdo)</h4>
+        <div style="font-size: 11px; color: var(--text-muted); word-break: break-all; margin-bottom: 10px;">${data.sourceTarget}</div>
+        <div style="font-size: 20px; font-weight: 700; color: #fff; margin-bottom: 4px;">${formatBytes(data.srcStats.bytes)}</div>
+        <div style="font-size: 12px; color: var(--text-muted);">${(data.srcStats.count || 0).toLocaleString()} archivos</div>
+      </div>
+
+      <!-- Right Dest Card -->
+      <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--card-border); border-radius: 10px; padding: 14px;">
+        <h4 style="margin: 0 0 8px 0; color: var(--primary-color); font-size: 14px;">☁️ Destino (Panel Derecho)</h4>
+        <div style="font-size: 11px; color: var(--text-muted); word-break: break-all; margin-bottom: 10px;">${data.destTarget}</div>
+        <div style="font-size: 20px; font-weight: 700; color: #fff; margin-bottom: 4px;">${formatBytes(data.dstStats.bytes)}</div>
+        <div style="font-size: 12px; color: var(--text-muted);">${(data.dstStats.count || 0).toLocaleString()} archivos</div>
+      </div>
+    </div>
+
+    <!-- Differences Breakdown -->
+    <div style="background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; padding: 14px;">
+      <h4 style="margin: 0 0 10px 0; font-size: 13px; color: #fff;">📊 Desglose de Auditoría:</h4>
+      <div style="display: flex; flex-direction: column; gap: 8px; font-size: 13px;">
+        <div style="display: flex; justify-content: space-between;">
+          <span style="color: var(--text-muted);">🟢 Archivos Idénticos:</span>
+          <span style="font-weight: 700; color: #2ecc71;">${data.matching.toLocaleString()}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between;">
+          <span style="color: var(--text-muted);">📥 Faltantes en el Destino:</span>
+          <span style="font-weight: 700; color: ${data.missingInDest > 0 ? '#ffc107' : '#fff'};">${data.missingInDest.toLocaleString()}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between;">
+          <span style="color: var(--text-muted);">⚠️ Archivos Modificados (difiere tamaño/fecha):</span>
+          <span style="font-weight: 700; color: ${data.differing > 0 ? '#ff4d4d' : '#fff'};">${data.differing.toLocaleString()}</span>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 // App Startup
 initSocket();
 loadRemotes();
