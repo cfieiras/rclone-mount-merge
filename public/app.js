@@ -226,10 +226,16 @@ function renderQueueStack(running, stats, queue, isQueuePaused) {
   let html = '';
 
   if (running && stats) {
+    const isScanning = stats.progress === 0 && (stats.speed === '0 B/s' || (stats.transferred && stats.transferred.startsWith('0 B')));
+    const badgeText = isScanning ? `🔍 INDEXANDO Y ESCANEANDO (${stats.mode})` : `🟢 EN EJECUCIÓN (${stats.mode})`;
+    const speedText = isScanning
+      ? `🔍 Escaneando estructura de archivos... (${stats.lastLog || 'preparando...'})`
+      : `${stats.transferred} / ${stats.total} (${stats.speed})`;
+
     html += `
       <div class="queue-card-item active-task">
         <div class="queue-card-header">
-          <span class="queue-badge badge-active">🟢 EN EJECUCIÓN (${stats.mode})</span>
+          <span class="queue-badge ${isScanning ? 'badge-paused' : 'badge-active'}">${badgeText}</span>
           <span style="font-size: 13px; font-weight: 700; color: var(--accent-color);">${stats.progress}%</span>
         </div>
         <div class="queue-card-paths">
@@ -238,10 +244,10 @@ function renderQueueStack(running, stats, queue, isQueuePaused) {
           <span>${stats.destination}</span>
         </div>
         <div class="progress-track" style="height: 6px;">
-          <div class="progress-fill" style="width: ${stats.progress}%;"></div>
+          <div class="progress-fill" style="width: ${Math.max(stats.progress, 5)}%;"></div>
         </div>
         <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted);">
-          <span>${stats.transferred} / ${stats.total} (${stats.speed})</span>
+          <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 80%;">${speedText}</span>
           <span>ETA: ${stats.eta}</span>
         </div>
       </div>
@@ -479,12 +485,13 @@ function updateTransferStatus(running, stats) {
     btnModeSync.disabled = true;
     
     if (stats) {
+      const isScanning = stats.progress === 0 && (stats.speed === '0 B/s' || (stats.transferred && stats.transferred.startsWith('0 B')));
       transferProgressContainer.classList.remove('hidden');
       transferProgressPercent.innerText = `${stats.progress}%`;
-      transferProgressBarFill.style.width = `${stats.progress}%`;
-      transferProgressSpeed.innerText = stats.speed;
+      transferProgressBarFill.style.width = `${Math.max(stats.progress, 5)}%`;
+      transferProgressSpeed.innerText = isScanning ? '🔍 Escaneando / Indexando...' : stats.speed;
       transferProgressSize.innerText = `${stats.transferred} / ${stats.total}`;
-      transferProgressEta.innerText = stats.eta;
+      transferProgressEta.innerText = isScanning ? 'Preparando...' : stats.eta;
     }
   } else {
     btnStartTransfer.classList.remove('hidden');
