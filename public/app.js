@@ -128,7 +128,7 @@ function initSocket() {
 
       case 'transfer_status':
         updateTransferStatus(msg.running, msg.stats);
-        renderQueueStack(msg.running, msg.stats, msg.queue, msg.isQueuePaused);
+        renderQueueStack(msg.running, msg.stats, msg.queue, msg.isQueuePaused, msg.completedTasks);
         if (msg.running === false && msg.success !== undefined) {
           if (msg.success) {
             appendLog(`¡Transferencia de fondo completada con éxito!`, 'success');

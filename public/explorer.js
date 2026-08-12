@@ -103,35 +103,22 @@ function initSocket() {
       const msg = JSON.parse(event.data);
       if (msg.type === 'transfer_status') {
         updateProgressUI(msg.running, msg.stats, msg.success, msg.error, msg.queueCount);
-        renderQueueStack(msg.running, msg.stats, msg.queue, msg.isQueuePaused);
+        renderQueueStack(msg.running, msg.stats, msg.queue, msg.isQueuePaused, msg.completedTasks);
       }
     } catch (e) {}
   };
 }
 
-// Queue Drawer Controller
+// Inline Task Queue & History Controller
 let currentQueueList = [];
+let currentCompletedList = [];
 let isQueuePausedState = false;
 
-const modalQueueDrawer = document.getElementById('modal-queue-drawer');
-const btnOpenQueueDrawer = document.getElementById('btn-open-queue-drawer');
-const btnCloseQueueDrawer = document.getElementById('btn-close-queue-drawer');
 const btnToggleQueuePause = document.getElementById('btn-toggle-queue-pause');
 const btnClearQueue = document.getElementById('btn-clear-queue');
 const queueStackContainer = document.getElementById('queue-stack-container');
 const queueBadgeCount = document.getElementById('queue-badge-count');
-
-if (btnOpenQueueDrawer) {
-  btnOpenQueueDrawer.addEventListener('click', () => {
-    modalQueueDrawer.classList.remove('hidden');
-  });
-}
-
-if (btnCloseQueueDrawer) {
-  btnCloseQueueDrawer.addEventListener('click', () => {
-    modalQueueDrawer.classList.add('hidden');
-  });
-}
+const activeTransferBarWrapper = document.getElementById('active-transfer-bar-wrapper');
 
 if (btnToggleQueuePause) {
   btnToggleQueuePause.addEventListener('click', async () => {
@@ -147,10 +134,9 @@ if (btnToggleQueuePause) {
 
 if (btnClearQueue) {
   btnClearQueue.addEventListener('click', async () => {
-    if (!confirm('¿Estás seguro de vaciar todas las tareas pendientes de la cola?')) return;
     try {
-      const res = await fetch('/api/transfer/queue/clear', { method: 'POST' });
-      const data = await safeFetchJson(res);
+      await fetch('/api/transfer/queue/clear', { method: 'POST' });
+      await fetch('/api/transfer/queue/clear-history', { method: 'POST' });
     } catch (e) {
       alert(e.message);
     }
@@ -170,23 +156,36 @@ async function removeTaskFromQueue(id) {
   }
 }
 
-function renderQueueStack(running, stats, queue, isQueuePaused) {
+function renderQueueStack(running, stats, queue, isQueuePaused, completedTasks) {
   currentQueueList = queue || [];
+  currentCompletedList = completedTasks || [];
   isQueuePausedState = !!isQueuePaused;
 
-  const totalItems = (running ? 1 : 0) + currentQueueList.length;
-  if (queueBadgeCount) queueBadgeCount.innerText = totalItems;
+  const totalPendingOrActive = (running ? 1 : 0) + currentQueueList.length;
+  const totalCount = totalPendingOrActive + currentCompletedList.length;
+
+  if (queueBadgeCount) queueBadgeCount.innerText = totalCount;
   if (btnToggleQueuePause) {
     btnToggleQueuePause.innerText = isQueuePausedState ? '▶️ Reanudar Cola' : '⏸️ Pausar Cola';
   }
 
+  if (running && stats && activeTransferBarWrapper) {
+    activeTransferBarWrapper.classList.remove('hidden');
+  } else if (activeTransferBarWrapper) {
+    activeTransferBarWrapper.classList.add('hidden');
+  }
+
+  if (totalCount > 0 || running) {
+    progressBox.classList.remove('hidden');
+  }
+
   if (!queueStackContainer) return;
 
-  if (totalItems === 0) {
+  if (totalCount === 0 && !running) {
     queueStackContainer.innerHTML = `
-      <div class="empty-state-small">
-        <span style="font-size: 24px;">📋</span>
-        <p style="margin-top: 8px;">No hay tareas activas ni en cola en este momento.</p>
+      <div class="empty-state-small" style="padding: 10px;">
+        <span style="font-size: 18px;">📋</span>
+        <p style="margin-top: 4px; font-size: 12px;">No hay tareas acumuladas ni en cola.</p>
       </div>
     `;
     return;
@@ -194,46 +193,40 @@ function renderQueueStack(running, stats, queue, isQueuePaused) {
 
   let html = '';
 
-  if (running && stats) {
-    const isScanning = stats.progress === 0 && (stats.speed === '0 B/s' || (stats.transferred && stats.transferred.startsWith('0 B')));
-    const badgeText = isScanning ? `🔍 INDEXANDO Y ESCANEANDO (${stats.mode})` : `🟢 EN EJECUCIÓN (${stats.mode})`;
-    const speedText = isScanning
-      ? `🔍 Escaneando estructura de archivos... (${stats.lastLog || 'preparando...'})`
-      : `${stats.transferred} / ${stats.total} (${stats.speed})`;
-
-    html += `
-      <div class="queue-card-item active-task">
-        <div class="queue-card-header">
-          <span class="queue-badge ${isScanning ? 'badge-paused' : 'badge-active'}">${badgeText}</span>
-          <span style="font-size: 13px; font-weight: 700; color: var(--accent-color);">${stats.progress}%</span>
-        </div>
-        <div class="queue-card-paths">
-          <span>${stats.source}</span>
-          <span style="color: var(--accent-color);">➔</span>
-          <span>${stats.destination}</span>
-        </div>
-        <div class="progress-track" style="height: 6px;">
-          <div class="progress-fill" style="width: ${Math.max(stats.progress, 5)}%;"></div>
-        </div>
-        <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted);">
-          <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 80%;">${speedText}</span>
-          <span>ETA: ${stats.eta}</span>
-        </div>
-      </div>
-    `;
-  }
-
+  // 1. Pending Tasks
   currentQueueList.forEach((task, idx) => {
     const badgeClass = isQueuePausedState ? 'badge-paused' : 'badge-pending';
-    const badgeText = isQueuePausedState ? `PAUSADO (Puesto #${idx + 1})` : `Puesto #${idx + 1}`;
+    const badgeText = isQueuePausedState ? `PAUSADO (Puesto #${idx + 1})` : `PENDIENTE (Puesto #${idx + 1})`;
 
     html += `
       <div class="queue-card-item">
         <div class="queue-card-header">
           <span class="queue-badge ${badgeClass}">⏳ ${badgeText} - ${task.action.toUpperCase()}</span>
-          <button class="btn btn-secondary" style="padding: 4px 10px; font-size: 11px; width: auto; border-color: rgba(255,62,108,0.3); color: #ff4d4d;" onclick="removeTaskFromQueue('${task.id}')" title="Sacar de la cola">
+          <button class="btn btn-secondary" style="padding: 3px 8px; font-size: 10px; width: auto; border-color: rgba(255,62,108,0.3); color: #ff4d4d;" onclick="removeTaskFromQueue('${task.id}')" title="Sacar de la cola">
             ❌ Sacar
           </button>
+        </div>
+        <div class="queue-card-paths">
+          <span>${task.sourceArg}</span>
+          <span style="color: var(--accent-color);">➔</span>
+          <span>${task.destArg}</span>
+        </div>
+      </div>
+    `;
+  });
+
+  // 2. Completed / Failed Tasks
+  currentCompletedList.forEach(task => {
+    const isSuccess = task.status === 'completed';
+    const badgeText = isSuccess ? `✅ COMPLETADO (${task.completedAt})` : `❌ FALLIDO (${task.completedAt})`;
+
+    html += `
+      <div class="queue-card-item" style="opacity: 0.85; border-color: ${isSuccess ? 'rgba(46,204,113,0.3)' : 'rgba(255,77,77,0.3)'};">
+        <div class="queue-card-header">
+          <span class="queue-badge" style="background: ${isSuccess ? 'rgba(46,204,113,0.15)' : 'rgba(255,77,77,0.15)'}; color: ${isSuccess ? '#2ecc71' : '#ff4d4d'}; border: 1px solid ${isSuccess ? 'rgba(46,204,113,0.3)' : 'rgba(255,77,77,0.3)'};">
+            ${badgeText} - ${task.action.toUpperCase()}
+          </span>
+          ${task.error ? `<span style="font-size: 11px; color: #ff4d4d;">${task.error}</span>` : ''}
         </div>
         <div class="queue-card-paths">
           <span>${task.sourceArg}</span>

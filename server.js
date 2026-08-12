@@ -760,6 +760,7 @@ app.post('/api/unmount', (req, res) => {
 // Transfer Queue System Engine (Global Scope)
 // -------------------------------------------------------------
 const transferQueue = [];
+const completedTasks = [];
 let isQueuePaused = false;
 
 function broadcastQueueStatus(extraData = {}) {
@@ -769,6 +770,7 @@ function broadcastQueueStatus(extraData = {}) {
     stats: activeTransferStats,
     queueCount: transferQueue.length,
     queue: transferQueue,
+    completedTasks: completedTasks,
     isQueuePaused: isQueuePaused,
     ...extraData
   });
@@ -883,6 +885,18 @@ function runTransferTask(task) {
     const finalStats = activeTransferStats;
     activeTransferStats = null;
 
+    const historyItem = {
+      id: task.id,
+      action: task.action,
+      sourceArg: task.sourceArg,
+      destArg: task.destArg,
+      completedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      status: code === 0 ? 'completed' : 'failed',
+      error: code === 0 ? null : `Código ${code}`
+    };
+    completedTasks.unshift(historyItem);
+    if (completedTasks.length > 25) completedTasks.pop();
+
     if (code === 0) {
       logToUI('Transfer task completed successfully!', 'success');
       broadcastQueueStatus({ success: true, stats: finalStats });
@@ -973,6 +987,13 @@ app.post('/api/transfer/queue/clear', (req, res) => {
   logToUI(`Cleared ${cleared} pending tasks from queue.`);
   broadcastQueueStatus();
   res.json({ message: `${cleared} tareas eliminadas de la cola.` });
+});
+
+app.post('/api/transfer/queue/clear-history', (req, res) => {
+  completedTasks.length = 0;
+  logToUI('Cleared completed task history.');
+  broadcastQueueStatus();
+  res.json({ message: 'Historial de tareas completadas limpiado.' });
 });
 
 // -------------------------------------------------------------
