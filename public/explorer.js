@@ -731,11 +731,16 @@ btnCloudMkdir.addEventListener('click', async () => {
   }
 });
 
+const selectOverwriteMode = document.getElementById('select-overwrite-mode');
+
 // -------------------------------------------------------------
 // TRANSFER ACTION HANDLERS (Copy, Move, Sync, Delete)
 // -------------------------------------------------------------
 async function executeOperation(payload) {
   try {
+    const mode = selectOverwriteMode ? selectOverwriteMode.value : 'update';
+    payload.overwriteMode = mode;
+
     const res = await fetch('/api/fs/operation', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -744,9 +749,13 @@ async function executeOperation(payload) {
     const data = await safeFetchJson(res);
     if (!res.ok) {
       alert(`Error en la operación: ${data.error || 'Error desconocido'}`);
-    } else if (data.status === 'queued') {
+    } else {
       progressBox.classList.remove('hidden');
-      progressLog.innerText = `📌 Tarea agregada a la cola de espera (Puesto #${data.position})`;
+      if (data.status === 'queued') {
+        progressLog.innerText = `📌 Tarea agregada a la cola de espera (Puesto #${data.position})`;
+      } else {
+        progressLog.innerText = `Iniciando transferencia... (${data.message || ''})`;
+      }
     }
   } catch (e) {
     alert(e.message);

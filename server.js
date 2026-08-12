@@ -422,7 +422,11 @@ app.post('/api/drives/reconnect', (req, res) => {
     logToUI(`[RCLONE RECONNECT] ${text.trim()}`);
 
     // Auto-respond to known prompts (similar to create)
-    if (buffer.includes('Use web browser to automatically authenticate')) {
+    if (buffer.includes('Already have a token') || buffer.includes('Token already configured') || buffer.includes('replace it?')) {
+      logToUI('Reconnect: Replacing existing token / re-authenticating');
+      child.stdin.write('y\n');
+      buffer = '';
+    } else if (buffer.includes('Use web browser to automatically authenticate')) {
       logToUI('Reconnect: Initiating Browser OAuth authorization');
       child.stdin.write('y\n');
       buffer = '';
@@ -437,7 +441,7 @@ app.post('/api/drives/reconnect', (req, res) => {
       logToUI('Reconnect: Confirming selected drive');
       child.stdin.write('y\n');
       buffer = '';
-    } else if (buffer.includes('Yes this is OK (default)')) {
+    } else if (buffer.includes('Yes this is OK (default)') || buffer.includes('Yes this is OK')) {
       logToUI('Reconnect: Saving configuration');
       child.stdin.write('y\n');
       buffer = '';
@@ -792,8 +796,8 @@ function processNextInQueue() {
 }
 
 function runTransferTask(task) {
-  const { action, sourceArg, destArg } = task;
-  logToUI(`Starting ${action} from "${sourceArg}" to "${destArg}"...`);
+  const { action, sourceArg, destArg, overwriteMode } = task;
+  logToUI(`Starting ${action} (overwriteMode: ${overwriteMode || 'update'}) from "${sourceArg}" to "${destArg}"...`);
 
   const processArgs = [
     '--config', RCLONE_CONF,
@@ -815,6 +819,12 @@ function runTransferTask(task) {
     '--exclude', 'Almacen personal/**',
     '--exclude', 'Personal Vault/**'
   ];
+
+  if (overwriteMode === 'skip') {
+    processArgs.push('--ignore-existing');
+  } else if (overwriteMode === 'force') {
+    processArgs.push('--ignore-times');
+  }
 
   const child = spawn(RCLONE_EXE, processArgs);
   activeTransferProcess = child;
@@ -1076,7 +1086,7 @@ app.get('/api/fs/cloud/ls', (req, res) => {
 
 // File System Batch Operation (Copy, Move, Mkdir, Delete)
 app.post('/api/fs/operation', (req, res) => {
-  const { action, srcType, srcPath, dstType, dstPath, items, newDirName } = req.body;
+  const { action, srcType, srcPath, dstType, dstPath, items, newDirName, overwriteMode } = req.body;
 
   if (action === 'mkdir') {
     if (dstType === 'local') {
@@ -1140,7 +1150,7 @@ app.post('/api/fs/operation', (req, res) => {
     if (action === 'sync') {
       let sourceArg = srcType === 'local' ? srcPath : (srcPath ? `${srcType}:${srcPath}` : `${srcType}:`);
       let destArg = dstType === 'local' ? dstPath : (dstPath ? `${dstType}:${dstPath}` : `${dstType}:`);
-      const result = enqueueOrRunTransferTask({ action: 'sync', sourceArg, destArg });
+      const result = enqueueOrRunTransferTask({ action: 'sync', sourceArg, destArg, overwriteMode });
       return res.json(result);
     }
 
@@ -1167,7 +1177,7 @@ app.post('/api/fs/operation', (req, res) => {
         }
       }
 
-      lastResult = enqueueOrRunTransferTask({ action, sourceArg, destArg });
+      lastResult = enqueueOrRunTransferTask({ action, sourceArg, destArg, overwriteMode });
     });
 
     return res.json({
